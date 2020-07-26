@@ -37,10 +37,12 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\sound\NoteInstrument;
 use function assert;
 use function floor;
 
 class Banner extends Transparent{
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 
@@ -61,8 +63,8 @@ class Banner extends Transparent{
 	 */
 	protected $patterns;
 
-	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(1.0, BlockToolType::AXE));
+	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(1.0, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 		$this->baseColor = DyeColor::BLACK();
 		$this->patterns = new Deque();
 	}

@@ -31,6 +31,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\sound\NoteInstrument;
 
 class Stair extends Transparent{
 
@@ -42,9 +43,9 @@ class Stair extends Transparent{
 	/** @var StairShape */
 	protected $shape;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo){
+	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
 		$this->shape = StairShape::STRAIGHT();
-		parent::__construct($idInfo, $name, $breakInfo);
+		parent::__construct($idInfo, $name, $breakInfo, $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	protected function writeStateToMeta() : int{

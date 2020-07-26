@@ -28,6 +28,7 @@ use pocketmine\math\Facing;
 use function count;
 
 class Fence extends Transparent{
+
 	/** @var bool[] facing => dummy */
 	protected $connections = [];
 

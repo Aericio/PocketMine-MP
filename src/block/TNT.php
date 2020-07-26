@@ -34,6 +34,7 @@ use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\Random;
+use pocketmine\world\sound\NoteInstrument;
 use function cos;
 use function sin;
 use const M_PI;
@@ -43,8 +44,8 @@ class TNT extends Opaque{
 	/** @var bool */
 	protected $unstable = false; //TODO: Usage unclear, seems to be a weird hack in vanilla
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::instant());
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::instant(), $noteblockInstrument);
 	}
 
 	public function readStateFromData(int $id, int $stateMeta) : void{
