@@ -29,54 +29,33 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
-use pocketmine\world\sound\RedstonePowerOffSound;
-use pocketmine\world\sound\RedstonePowerOnSound;
 
-abstract class Button extends Flowable{
+final class ChemistryTable extends Opaque{
 
 	/** @var int */
-	protected $facing = Facing::DOWN;
-	/** @var bool */
-	protected $pressed = false;
-
-	protected function writeStateToMeta() : int{
-		return BlockDataSerializer::writeFacing($this->facing) | ($this->pressed ? BlockLegacyMetadata::BUTTON_FLAG_POWERED : 0);
-	}
+	private $facing = Facing::NORTH;
 
 	public function readStateFromData(int $id, int $stateMeta) : void{
-		//TODO: in PC it's (6 - facing) for every meta except 0 (down)
-		$this->facing = BlockDataSerializer::readFacing($stateMeta & 0x07);
-		$this->pressed = ($stateMeta & BlockLegacyMetadata::BUTTON_FLAG_POWERED) !== 0;
+		$this->facing = Facing::opposite(BlockDataSerializer::readLegacyHorizontalFacing($stateMeta & 0x3));
+	}
+
+	protected function writeStateToMeta() : int{
+		return BlockDataSerializer::writeLegacyHorizontalFacing(Facing::opposite($this->facing));
 	}
 
 	public function getStateBitmask() : int{
-		return 0b1111;
+		return 0b0011;
 	}
 
 	public function place(BlockTransaction $tx, Item $item, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector, ?Player $player = null) : bool{
-		//TODO: check valid target block
-		$this->facing = $face;
+		if($player !== null){
+			$this->facing = Facing::opposite($player->getHorizontalFacing());
+		}
 		return parent::place($tx, $item, $blockReplace, $blockClicked, $face, $clickVector, $player);
 	}
 
-	abstract protected function getActivationTime() : int;
-
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null) : bool{
-		if(!$this->pressed){
-			$this->pressed = true;
-			$this->pos->getWorld()->setBlock($this->pos, $this);
-			$this->pos->getWorld()->scheduleDelayedBlockUpdate($this->pos, $this->getActivationTime());
-			$this->pos->getWorld()->addSound($this->pos->add(0.5, 0.5, 0.5), new RedstonePowerOnSound());
-		}
-
-		return true;
-	}
-
-	public function onScheduledUpdate() : void{
-		if($this->pressed){
-			$this->pressed = false;
-			$this->pos->getWorld()->setBlock($this->pos, $this);
-			$this->pos->getWorld()->addSound($this->pos->add(0.5, 0.5, 0.5), new RedstonePowerOffSound());
-		}
+		//TODO
+		return false;
 	}
 }

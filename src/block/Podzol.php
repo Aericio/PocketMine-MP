@@ -28,6 +28,6 @@ use pocketmine\world\sound\NoteInstrument;
 class Podzol extends Opaque{
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.5, BlockToolType::SHOVEL), $noteblockInstrument);
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5, BlockToolType::SHOVEL), $noteblockInstrument);
 	}
 }
