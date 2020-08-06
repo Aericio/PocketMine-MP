@@ -43,7 +43,6 @@ use function assert;
 use function floor;
 
 class Banner extends Transparent{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

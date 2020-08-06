@@ -32,7 +32,6 @@ use pocketmine\world\sound\NoteInstrument;
 use function mt_rand;
 
 class RedstoneOre extends Opaque{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

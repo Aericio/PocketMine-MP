@@ -33,7 +33,6 @@ use pocketmine\world\BlockTransaction;
 use pocketmine\world\sound\NoteInstrument;
 
 class Slab extends Transparent{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

@@ -34,7 +34,6 @@ use pocketmine\world\BlockTransaction;
 use pocketmine\world\sound\NoteInstrument;
 
 class Furnace extends Opaque{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

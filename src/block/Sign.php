@@ -41,7 +41,6 @@ use function floor;
 use function strlen;
 
 class Sign extends Transparent{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

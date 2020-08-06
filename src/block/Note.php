@@ -34,7 +34,6 @@ use pocketmine\world\sound\NoteSound;
 use function assert;
 
 class Note extends Opaque{
-
 	public const MIN_PITCH = 0;
 	public const MAX_PITCH = 24;
 

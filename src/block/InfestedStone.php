@@ -26,7 +26,7 @@ namespace pocketmine\block;
 use pocketmine\item\Item;
 use pocketmine\world\sound\NoteInstrument;
 
-abstract class InfestedStone extends Opaque {
+abstract class InfestedStone extends Opaque{
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.75), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());

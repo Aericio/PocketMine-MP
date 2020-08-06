@@ -36,7 +36,6 @@ use function round;
 use const M_PI;
 
 class DaylightSensor extends Transparent{
-
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

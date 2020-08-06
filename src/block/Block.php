@@ -413,7 +413,7 @@ class Block{
 	 *
 	 * @return NoteInstrument
 	 */
-	public function getNoteblockInstrument() : NoteInstrument {
+	public function getNoteblockInstrument() : NoteInstrument{
 		return $this->noteblockInstrument;
 	}
 

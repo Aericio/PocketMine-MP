@@ -34,7 +34,6 @@ use pocketmine\world\sound\DoorSound;
 use pocketmine\world\sound\NoteInstrument;
 
 class FenceGate extends Transparent{
-
 	/** @var bool */
 	protected $open = false;
 	/** @var int */
