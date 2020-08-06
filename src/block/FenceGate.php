@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\HorizontalFacingTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
@@ -34,10 +35,10 @@ use pocketmine\world\sound\DoorSound;
 use pocketmine\world\sound\NoteInstrument;
 
 class FenceGate extends Transparent{
+	use HorizontalFacingTrait;
+
 	/** @var bool */
 	protected $open = false;
-	/** @var int */
-	protected $facing = Facing::NORTH;
 	/** @var bool */
 	protected $inWall = false;
 

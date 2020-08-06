@@ -27,6 +27,7 @@ use pocketmine\block\inventory\AnvilInventory;
 use pocketmine\block\utils\BlockDataSerializer;
 use pocketmine\block\utils\Fallable;
 use pocketmine\block\utils\FallableTrait;
+use pocketmine\block\utils\HorizontalFacingTrait;
 use pocketmine\item\Item;
 use pocketmine\item\ToolTier;
 use pocketmine\math\AxisAlignedBB;
@@ -38,9 +39,7 @@ use pocketmine\world\sound\NoteInstrument;
 
 class Anvil extends Transparent implements Fallable{
 	use FallableTrait;
-
-	/** @var int */
-	protected $facing = Facing::NORTH;
+	use HorizontalFacingTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(5.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel(), 6000.0), $noteblockInstrument);

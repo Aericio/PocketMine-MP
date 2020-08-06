@@ -23,8 +23,10 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\AnyFacingTrait;
 use pocketmine\block\utils\BlockDataSerializer;
 use pocketmine\item\Item;
+use pocketmine\math\Axis;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -33,9 +35,7 @@ use pocketmine\world\BlockTransaction;
 use pocketmine\world\sound\NoteInstrument;
 
 class EndRod extends Flowable{
-
-	/** @var int */
-	protected $facing = Facing::DOWN;
+	use AnyFacingTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::instant(), $noteblockInstrument);
@@ -43,7 +43,7 @@ class EndRod extends Flowable{
 
 	protected function writeStateToMeta() : int{
 		$result = BlockDataSerializer::writeFacing($this->facing);
-		if(Facing::axis($this->facing) !== Facing::AXIS_Y){
+		if(Facing::axis($this->facing) !== Axis::Y){
 			$result ^= 1; //TODO: in PC this is always the same as facing, just PE is stupid
 		}
 
@@ -86,7 +86,7 @@ class EndRod extends Flowable{
 		$myAxis = Facing::axis($this->facing);
 
 		$bb = AxisAlignedBB::one();
-		foreach([Facing::AXIS_Y, Facing::AXIS_Z, Facing::AXIS_X] as $axis){
+		foreach([Axis::Y, Axis::Z, Axis::X] as $axis){
 			if($axis === $myAxis){
 				continue;
 			}

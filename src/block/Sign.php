@@ -141,8 +141,10 @@ class Sign extends Transparent{
 		return $this->text;
 	}
 
-	public function setText(SignText $text) : void{
+	/** @return $this */
+	public function setText(SignText $text) : self{
 		$this->text = $text;
+		return $this;
 	}
 
 	/**
