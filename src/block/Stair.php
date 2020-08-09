@@ -45,7 +45,7 @@ class Stair extends Transparent{
 
 	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
 		$this->shape = StairShape::STRAIGHT();
-		parent::__construct($idInfo, $name, $breakInfo, $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
+		parent::__construct($idInfo, $name, $breakInfo, $noteblockInstrument);
 	}
 
 	protected function writeStateToMeta() : int{

@@ -56,6 +56,9 @@ class Block{
 	/** @var string */
 	protected $fallbackName;
 
+	/** @var NoteInstrument */
+	protected $noteblockInstrument;
+
 	/** @var BlockBreakInfo */
 	protected $breakInfo;
 
@@ -65,11 +68,8 @@ class Block{
 	/** @var AxisAlignedBB[]|null */
 	protected $collisionBoxes = null;
 
-	/** @var NoteInstrument */
-	protected $noteblockInstrument;
-
 	/**
-	 * @param string          $name English name of the block type (TODO: implement translations)
+	 * @param string $name English name of the block type (TODO: implement translations)
 	 */
 	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
 		if(($idInfo->getVariant() & $this->getStateBitmask()) !== 0){

@@ -40,7 +40,7 @@ class Slab extends Transparent{
 	protected $slabType;
 
 	public function __construct(BlockIdentifierFlattened $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
-		parent::__construct($idInfo, $name . " Slab", $breakInfo, $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
+		parent::__construct($idInfo, $name . " Slab", $breakInfo, $noteblockInstrument);
 		$this->slabType = SlabType::BOTTOM();
 	}
 
