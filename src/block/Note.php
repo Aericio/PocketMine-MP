@@ -40,6 +40,9 @@ class Note extends Opaque{
 	/** @var int */
 	private $pitch = self::MIN_PITCH;
 
+	/** @var NoteInstrument */
+	private $instrument;
+
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.8, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 	}
@@ -52,6 +55,7 @@ class Note extends Opaque{
 		}else{
 			$this->pitch = self::MIN_PITCH;
 		}
+		$this->instrument = $this->getSide(Facing::DOWN)->getNoteblockInstrument();
 	}
 
 	public function writeStateToWorld() : void{
@@ -96,14 +100,17 @@ class Note extends Opaque{
 		return true;
 	}
 
+	public function onNearbyBlockChange() : void{
+		$this->instrument = $this->getSide(Facing::DOWN)->getNoteblockInstrument();
+	}
+
 	/**
 	 * Get the instrument that the noteblock will play when it is triggered
 	 *
 	 * @return NoteInstrument
 	 */
 	public function getInstrument() : NoteInstrument{
-		$blockUnder = $this->getSide(Facing::DOWN);
-		return $blockUnder->getNoteblockInstrument();
+		return $this->instrument;
 	}
 
 	public function triggerNote() : void{
