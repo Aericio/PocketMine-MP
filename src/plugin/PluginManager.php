@@ -31,7 +31,9 @@ use pocketmine\event\plugin\PluginDisableEvent;
 use pocketmine\event\plugin\PluginEnableEvent;
 use pocketmine\event\RegisteredListener;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\permission\DefaultPermissions;
 use pocketmine\permission\PermissionManager;
+use pocketmine\permission\PermissionParser;
 use pocketmine\Server;
 use pocketmine\timings\TimingsHandler;
 use pocketmine\utils\AssumptionFailedError;
@@ -162,8 +164,32 @@ class PluginManager{
 					}
 
 					$permManager = PermissionManager::getInstance();
-					foreach($description->getPermissions() as $perm){
-						$permManager->addPermission($perm);
+					$opRoot = $permManager->getPermission(DefaultPermissions::ROOT_OPERATOR);
+					$everyoneRoot = $permManager->getPermission(DefaultPermissions::ROOT_USER);
+					foreach($description->getPermissions() as $default => $perms){
+						foreach($perms as $perm){
+							$permManager->addPermission($perm);
+							switch($default){
+								case PermissionParser::DEFAULT_TRUE:
+									$everyoneRoot->addChild($perm->getName(), true);
+									break;
+								case PermissionParser::DEFAULT_OP:
+									$opRoot->addChild($perm->getName(), true);
+									break;
+								case PermissionParser::DEFAULT_NOT_OP:
+									//TODO: I don't think anyone uses this, and it currently relies on some magic inside PermissibleBase
+									//to ensure that the operator override actually applies.
+									//Explore getting rid of this.
+									//The following grants this permission to anyone who has the "everyone" root permission.
+									//However, if the operator root node (which has higher priority) is present, the
+									//permission will be denied instead.
+									$everyoneRoot->addChild($perm->getName(), true);
+									$opRoot->addChild($perm->getName(), false);
+									break;
+								default:
+									break;
+							}
+						}
 					}
 
 					/**
@@ -433,21 +459,21 @@ class PluginManager{
 					continue;
 				}
 
-				$handlerClosure = $method->getClosure($listener);
-
-				try{
-					$eventClass = $parameters[0]->getClass();
-				}catch(\ReflectionException $e){ //class doesn't exist
-					if(isset($tags["softDepend"]) && !isset($this->plugins[$tags["softDepend"]])){
-						$this->server->getLogger()->debug("Not registering @softDepend listener " . Utils::getNiceClosureName($handlerClosure) . "() because plugin \"" . $tags["softDepend"] . "\" not found");
+				$paramType = $parameters[0]->getType();
+				//isBuiltin() returns false for builtin classes ..................
+				if($paramType instanceof \ReflectionNamedType && !$paramType->isBuiltin()){
+					/** @phpstan-var class-string $paramClass */
+					$paramClass = $paramType->getName();
+					$eventClass = new \ReflectionClass($paramClass);
+					if(!$eventClass->isSubclassOf(Event::class)){
 						continue;
 					}
-
-					throw $e;
-				}
-				if($eventClass === null or !$eventClass->isSubclassOf(Event::class)){
+				}else{
 					continue;
 				}
+
+				$handlerClosure = $method->getClosure($listener);
+				if($handlerClosure === null) throw new AssumptionFailedError("This should never happen");
 
 				try{
 					$priority = isset($tags["priority"]) ? EventPriority::fromString($tags["priority"]) : EventPriority::NORMAL;

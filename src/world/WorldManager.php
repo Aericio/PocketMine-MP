@@ -141,7 +141,7 @@ class WorldManager{
 
 		$ev = new WorldUnloadEvent($world);
 		if($world === $this->defaultWorld and !$forceUnload){
-			$ev->setCancelled(true);
+			$ev->cancel();
 		}
 
 		$ev->call();
@@ -230,7 +230,7 @@ class WorldManager{
 			$this->server->getLogger()->notice("Upgraded world \"$name\" to new format successfully. Backed up pre-conversion world at " . $converter->getBackupPath());
 		}
 
-		$world = new World($this->server, $name, $provider);
+		$world = new World($this->server, $name, $provider, $this->server->getAsyncPool());
 
 		$this->worlds[$world->getId()] = $world;
 		$world->setAutoSave($this->autoSave);
@@ -266,7 +266,7 @@ class WorldManager{
 		$providerClass::generate($path, $name, $seed, $generator, $options);
 
 		/** @see WritableWorldProvider::__construct() */
-		$world = new World($this->server, $name, new $providerClass($path));
+		$world = new World($this->server, $name, new $providerClass($path), $this->server->getAsyncPool());
 		$this->worlds[$world->getId()] = $world;
 
 		$world->setAutoSave($this->autoSave);
@@ -284,7 +284,7 @@ class WorldManager{
 
 			foreach((new ChunkSelector())->selectChunks(3, $centerX, $centerZ) as $index){
 				World::getXZ($index, $chunkX, $chunkZ);
-				$world->populateChunk($chunkX, $chunkZ, true);
+				$world->orderChunkPopulation($chunkX, $chunkZ);
 			}
 		}
 
@@ -374,7 +374,7 @@ class WorldManager{
 	}
 
 	private function doAutoSave() : void{
-		Timings::$worldSaveTimer->startTiming();
+		Timings::$worldSave->startTiming();
 		foreach($this->worlds as $world){
 			foreach($world->getPlayers() as $player){
 				if($player->spawned){
@@ -383,6 +383,6 @@ class WorldManager{
 			}
 			$world->save(false);
 		}
-		Timings::$worldSaveTimer->stopTiming();
+		Timings::$worldSave->stopTiming();
 	}
 }

@@ -28,12 +28,13 @@ use pocketmine\entity\Location;
 use pocketmine\entity\object\PrimedTNT;
 use pocketmine\entity\projectile\Arrow;
 use pocketmine\item\Durable;
-use pocketmine\item\enchantment\Enchantment;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\FlintSteel;
 use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\Random;
+use pocketmine\world\sound\IgniteSound;
 use pocketmine\world\sound\NoteInstrument;
 use function cos;
 use function sin;
@@ -69,7 +70,7 @@ class TNT extends Opaque{
 	}
 
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null) : bool{
-		if($item instanceof FlintSteel or $item->hasEnchantment(Enchantment::FIRE_ASPECT())){
+		if($item instanceof FlintSteel or $item->hasEnchantment(VanillaEnchantments::FIRE_ASPECT())){
 			if($item instanceof Durable){
 				$item->applyDamage(1);
 			}
@@ -84,10 +85,12 @@ class TNT extends Opaque{
 		return true;
 	}
 
-	public function onEntityInside(Entity $entity) : void{
+	public function onEntityInside(Entity $entity) : bool{
 		if($entity instanceof Arrow and $entity->isOnFire()){
 			$this->ignite();
+			return false;
 		}
+		return true;
 	}
 
 	public function ignite(int $fuse = 80) : void{
@@ -100,6 +103,7 @@ class TNT extends Opaque{
 		$tnt->setMotion(new Vector3(-sin($mot) * 0.02, 0.2, -cos($mot) * 0.02));
 
 		$tnt->spawnToAll();
+		$tnt->broadcastSound(new IgniteSound());
 	}
 
 	public function getFlameEncouragement() : int{

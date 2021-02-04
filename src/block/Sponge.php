@@ -31,7 +31,7 @@ class Sponge extends Opaque{
 	protected $wet = false;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.6), $noteblockInstrument);
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.6, BlockToolType::HOE), $noteblockInstrument);
 	}
 
 	protected function writeStateToMeta() : int{
@@ -44,5 +44,17 @@ class Sponge extends Opaque{
 
 	public function getStateBitmask() : int{
 		return 0b1;
+	}
+
+	public function getNonPersistentStateBitmask() : int{
+		return 0;
+	}
+
+	public function isWet() : bool{ return $this->wet; }
+
+	/** @return $this */
+	public function setWet(bool $wet) : self{
+		$this->wet = $wet;
+		return $this;
 	}
 }

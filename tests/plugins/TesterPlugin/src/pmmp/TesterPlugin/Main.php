@@ -26,6 +26,7 @@ namespace pmmp\TesterPlugin;
 use pocketmine\event\Listener;
 use pocketmine\event\server\CommandEvent;
 use pocketmine\plugin\PluginBase;
+use function array_shift;
 
 class Main extends PluginBase implements Listener{
 
@@ -38,27 +39,24 @@ class Main extends PluginBase implements Listener{
 	/** @var int */
 	protected $currentTestNumber = 0;
 
-	public function onEnable(){
+	public function onEnable() : void{
 		$this->getServer()->getPluginManager()->registerEvents($this, $this);
 		$this->getScheduler()->scheduleRepeatingTask(new CheckTestCompletionTask($this), 10);
 
 		$this->waitingTests = [];
 	}
 
-	public function onServerCommand(CommandEvent $event){
+	public function onServerCommand(CommandEvent $event) : void{
 		//The CI will send this command as a failsafe to prevent the build from hanging if the tester plugin failed to
 		//run. However, if the plugin loaded successfully we don't want to allow this to stop the server as there may
 		//be asynchronous tests running. Instead we cancel this and stop the server of our own accord once all tests
 		//have completed.
 		if($event->getCommand() === "stop"){
-			$event->setCancelled();
+			$event->cancel();
 		}
 	}
 
-	/**
-	 * @return Test|null
-	 */
-	public function getCurrentTest(){
+	public function getCurrentTest() : ?Test{
 		return $this->currentTest;
 	}
 
@@ -73,7 +71,7 @@ class Main extends PluginBase implements Listener{
 		return false;
 	}
 
-	public function onTestCompleted(Test $test){
+	public function onTestCompleted(Test $test) : void{
 		$message = "Finished test #" . $this->currentTestNumber . " (" . $test->getName() . "): ";
 		switch($test->getResult()){
 			case Test::RESULT_OK:
@@ -99,7 +97,7 @@ class Main extends PluginBase implements Listener{
 		$this->currentTest = null;
 	}
 
-	public function onAllTestsCompleted(){
+	public function onAllTestsCompleted() : void{
 		$this->getLogger()->notice("All tests finished, stopping the server");
 		$this->getServer()->shutdown();
 	}

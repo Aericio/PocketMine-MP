@@ -28,6 +28,8 @@ use pocketmine\scheduler\AsyncTask;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\format\io\FastChunkSerializer;
 use pocketmine\world\format\LightArray;
+use pocketmine\world\SimpleChunkManager;
+use pocketmine\world\utils\SubChunkExplorer;
 use pocketmine\world\World;
 use function igbinary_serialize;
 use function igbinary_unserialize;
@@ -50,19 +52,28 @@ class LightPopulationTask extends AsyncTask{
 	/** @var string */
 	private $resultBlockLightArrays;
 
-	public function __construct(World $world, Chunk $chunk){
+	public function __construct(World $world, int $chunkX, int $chunkZ, Chunk $chunk){
 		$this->storeLocal(self::TLS_KEY_WORLD, $world);
-		[$this->chunkX, $this->chunkZ] = [$chunk->getX(), $chunk->getZ()];
+		[$this->chunkX, $this->chunkZ] = [$chunkX, $chunkZ];
+		$chunk->setLightPopulated(null);
 		$this->chunk = FastChunkSerializer::serialize($chunk);
 	}
 
 	public function onRun() : void{
-		/** @var Chunk $chunk */
 		$chunk = FastChunkSerializer::deserialize($this->chunk);
 
+		$manager = new SimpleChunkManager();
+		$manager->setChunk($this->chunkX, $this->chunkZ, $chunk);
+
 		$blockFactory = BlockFactory::getInstance();
-		$chunk->recalculateHeightMap($blockFactory->lightFilter, $blockFactory->diffusesSkyLight);
-		$chunk->populateSkyLight($blockFactory->lightFilter);
+		foreach([
+			"Block" => new BlockLightUpdate(new SubChunkExplorer($manager), $blockFactory->lightFilter, $blockFactory->light),
+			"Sky" => new SkyLightUpdate(new SubChunkExplorer($manager), $blockFactory->lightFilter, $blockFactory->blocksDirectSkyLight),
+		] as $name => $update){
+			$update->recalculateChunk($this->chunkX, $this->chunkZ);
+			$update->execute();
+		}
+
 		$chunk->setLightPopulated();
 
 		$this->resultHeightMap = igbinary_serialize($chunk->getHeightMapArray());
@@ -79,9 +90,7 @@ class LightPopulationTask extends AsyncTask{
 	public function onCompletion() : void{
 		/** @var World $world */
 		$world = $this->fetchLocal(self::TLS_KEY_WORLD);
-		if(!$world->isClosed() and $world->isChunkLoaded($this->chunkX, $this->chunkZ)){
-			/** @var Chunk $chunk */
-			$chunk = $world->getChunk($this->chunkX, $this->chunkZ);
+		if(!$world->isClosed() and ($chunk = $world->getChunk($this->chunkX, $this->chunkZ)) !== null){
 			//TODO: calculated light information might not be valid if the terrain changed during light calculation
 
 			/** @var int[] $heightMapArray */

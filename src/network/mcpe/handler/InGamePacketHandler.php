@@ -23,10 +23,10 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\handler;
 
-use pocketmine\block\BlockLegacyIds;
+use pocketmine\block\BaseSign;
 use pocketmine\block\ItemFrame;
-use pocketmine\block\Sign;
 use pocketmine\block\utils\SignText;
+use pocketmine\crafting\CraftingGrid;
 use pocketmine\entity\animation\ConsumingItemAnimation;
 use pocketmine\entity\InvalidSkinException;
 use pocketmine\event\player\PlayerEditBookEvent;
@@ -47,7 +47,6 @@ use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\InventoryManager;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\ActorEventPacket;
-use pocketmine\network\mcpe\protocol\ActorFallPacket;
 use pocketmine\network\mcpe\protocol\ActorPickRequestPacket;
 use pocketmine\network\mcpe\protocol\AdventureSettingsPacket;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
@@ -64,7 +63,6 @@ use pocketmine\network\mcpe\protocol\InteractPacket;
 use pocketmine\network\mcpe\protocol\InventoryTransactionPacket;
 use pocketmine\network\mcpe\protocol\ItemFrameDropItemPacket;
 use pocketmine\network\mcpe\protocol\LabTablePacket;
-use pocketmine\network\mcpe\protocol\LevelSoundEventPacket;
 use pocketmine\network\mcpe\protocol\LevelSoundEventPacketV1;
 use pocketmine\network\mcpe\protocol\MapInfoRequestPacket;
 use pocketmine\network\mcpe\protocol\MobArmorEquipmentPacket;
@@ -126,8 +124,11 @@ class InGamePacketHandler extends PacketHandler{
 
 	/** @var float */
 	protected $lastRightClickTime = 0.0;
-	/** @var Vector3|null */
-	protected $lastRightClickPos = null;
+	/** @var UseItemTransactionData|null */
+	protected $lastRightClickData = null;
+
+	/** @var bool */
+	public $forceMoveSync = false;
 
 	/**
 	 * TODO: HACK! This tracks GUIs for inventories that the server considers "always open" so that the client can't
@@ -159,7 +160,21 @@ class InGamePacketHandler extends PacketHandler{
 		}
 
 		$this->player->setRotation($yaw, $pitch);
-		$this->player->updateNextPosition($packet->position->round(4)->subtract(0, 1.62, 0));
+
+		$curPos = $this->player->getLocation();
+		$newPos = $packet->position->subtract(0, 1.62, 0);
+
+		if($this->forceMoveSync and $newPos->distanceSquared($curPos) > 1){  //Tolerate up to 1 block to avoid problems with client-sided physics when spawning in blocks
+			$this->session->syncMovement($curPos, null, null, MovePlayerPacket::MODE_RESET);
+			$this->session->getLogger()->debug("Got outdated pre-teleport movement, received " . $newPos . ", expected " . $curPos);
+			//Still getting movements from before teleport, ignore them
+			return false;
+		}
+
+		// Once we get a movement within a reasonable distance, treat it as a teleport ACK and remove position lock
+		$this->forceMoveSync = false;
+
+		$this->player->handleMovement($newPos);
 
 		return true;
 	}
@@ -280,7 +295,7 @@ class InGamePacketHandler extends PacketHandler{
 				 * So people don't whine about messy desync issues when someone cancels CraftItemEvent, or when a crafting
 				 * transaction goes wrong.
 				 */
-				$this->session->sendDataPacket(ContainerClosePacket::create(InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID));
+				$this->session->sendDataPacket(ContainerClosePacket::create(InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID, true));
 
 				return false;
 			}finally{
@@ -324,12 +339,14 @@ class InGamePacketHandler extends PacketHandler{
 			case UseItemTransactionData::ACTION_CLICK_BLOCK:
 				//TODO: start hack for client spam bug
 				$clickPos = $data->getClickPos();
-				$spamBug = ($this->lastRightClickPos !== null and
+				$spamBug = ($this->lastRightClickData !== null and
 					microtime(true) - $this->lastRightClickTime < 0.1 and //100ms
-					$this->lastRightClickPos->distanceSquared($clickPos) < 0.00001 //signature spam bug has 0 distance, but allow some error
+					$this->lastRightClickData->getPlayerPos()->distanceSquared($data->getPlayerPos()) < 0.00001 and
+					$this->lastRightClickData->getBlockPos()->equals($data->getBlockPos()) and
+					$this->lastRightClickData->getClickPos()->distanceSquared($clickPos) < 0.00001 //signature spam bug has 0 distance, but allow some error
 				);
 				//get rid of continued spam if the player clicks and holds right-click
-				$this->lastRightClickPos = clone $clickPos;
+				$this->lastRightClickData = $data;
 				$this->lastRightClickTime = microtime(true);
 				if($spamBug){
 					return true;
@@ -340,8 +357,8 @@ class InGamePacketHandler extends PacketHandler{
 				if(!$this->player->interactBlock($blockPos, $data->getFace(), $clickPos)){
 					$this->onFailedBlockAction($blockPos, $data->getFace());
 				}elseif(
-					$this->player->getWorld()->getBlock($blockPos)->getId() === BlockLegacyIds::CRAFTING_TABLE &&
-					!array_key_exists($windowId = InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID, $this->openHardcodedWindows)
+					!array_key_exists($windowId = InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID, $this->openHardcodedWindows) &&
+					$this->player->getCraftingGrid()->getGridWidth() === CraftingGrid::SIZE_BIG
 				){
 					//TODO: HACK! crafting grid doesn't fit very well into the current PM container system, so this hack
 					//allows it to carry on working approximately the same way as it did in 1.14
@@ -390,7 +407,9 @@ class InGamePacketHandler extends PacketHandler{
 			}else{
 				$blocks[] = $blockPos;
 			}
-			$this->player->getLocation()->getWorld()->sendBlocks([$this->player], $blocks);
+			foreach($this->player->getWorld()->createBlockUpdatePackets($blocks) as $packet){
+				$this->session->sendDataPacket($packet);
+			}
 		}
 	}
 
@@ -431,6 +450,7 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	public function handleMobEquipment(MobEquipmentPacket $packet) : bool{
+		$this->session->getInvManager()->onClientSelectHotbarSlot($packet->hotbarSlot);
 		if(!$this->player->selectHotbarSlot($packet->hotbarSlot)){
 			$this->session->getInvManager()->syncSelectedHotbarSlot();
 		}
@@ -506,22 +526,22 @@ class InGamePacketHandler extends PacketHandler{
 				return true;
 			case PlayerActionPacket::ACTION_START_SPRINT:
 				if(!$this->player->toggleSprint(true)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_STOP_SPRINT:
 				if(!$this->player->toggleSprint(false)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_START_SNEAK:
 				if(!$this->player->toggleSneak(true)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_STOP_SNEAK:
 				if(!$this->player->toggleSneak(false)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_START_GLIDE:
@@ -535,7 +555,10 @@ class InGamePacketHandler extends PacketHandler{
 			case PlayerActionPacket::ACTION_STOP_SWIMMING:
 				//TODO: handle this when it doesn't spam every damn tick (yet another spam bug!!)
 				break;
-			case PlayerActionPacket::ACTION_INTERACT_BLOCK: //ignored (for now)
+			case PlayerActionPacket::ACTION_INTERACT_BLOCK: //TODO: ignored (for now)
+				break;
+			case PlayerActionPacket::ACTION_CREATIVE_PLAYER_DESTROY_BLOCK:
+				//TODO: do we need to handle this?
 				break;
 			default:
 				$this->session->getLogger()->debug("Unhandled/unknown player action type " . $packet->action);
@@ -545,10 +568,6 @@ class InGamePacketHandler extends PacketHandler{
 		$this->player->setUsingItem(false);
 
 		return true;
-	}
-
-	public function handleActorFall(ActorFallPacket $packet) : bool{
-		return true; //Not used
 	}
 
 	public function handleAnimate(AnimatePacket $packet) : bool{
@@ -564,7 +583,7 @@ class InGamePacketHandler extends PacketHandler{
 			$this->session->getInvManager()->onClientRemoveWindow($packet->windowId);
 		}
 
-		$this->session->sendDataPacket(ContainerClosePacket::create($packet->windowId));
+		$this->session->sendDataPacket(ContainerClosePacket::create($packet->windowId, false));
 		return true;
 	}
 
@@ -606,7 +625,7 @@ class InGamePacketHandler extends PacketHandler{
 		$nbt = $packet->namedtag->getRoot();
 		if(!($nbt instanceof CompoundTag)) throw new AssumptionFailedError("PHPStan should ensure this is a CompoundTag"); //for phpstorm's benefit
 
-		if($block instanceof Sign){
+		if($block instanceof BaseSign){
 			if(($textBlobTag = $nbt->getTag("Text")) instanceof StringTag){
 				try{
 					$text = SignText::fromBlob($textBlobTag->getValue());
@@ -616,7 +635,9 @@ class InGamePacketHandler extends PacketHandler{
 
 				try{
 					if(!$block->updateText($this->player, $text)){
-						$this->player->getWorld()->sendBlocks([$this->player], [$pos]);
+						foreach($this->player->getWorld()->createBlockUpdatePackets([$pos]) as $updatePacket){
+							$this->session->sendDataPacket($updatePacket);
+						}
 					}
 				}catch(\UnexpectedValueException $e){
 					throw BadPacketException::wrap($e);
@@ -815,23 +836,6 @@ class InGamePacketHandler extends PacketHandler{
 
 	public function handleLabTable(LabTablePacket $packet) : bool{
 		return false; //TODO
-	}
-
-	public function handleLevelSoundEvent(LevelSoundEventPacket $packet) : bool{
-		//TODO: we want to block out this packet completely, but we don't yet know the full scope of sounds that the client sends us from here
-		switch($packet->sound){
-			case LevelSoundEventPacket::SOUND_ATTACK:
-			case LevelSoundEventPacket::SOUND_ATTACK_NODAMAGE:
-			case LevelSoundEventPacket::SOUND_ATTACK_STRONG: //TODO: reassess this, seems like the regular attack is never used ??
-			case LevelSoundEventPacket::SOUND_HIT: //block punch, maybe entity attack too?
-			case LevelSoundEventPacket::SOUND_LAND:
-			case LevelSoundEventPacket::SOUND_FALL:
-			case LevelSoundEventPacket::SOUND_FALL_SMALL:
-			case LevelSoundEventPacket::SOUND_FALL_BIG:
-				return true;
-		}
-		$this->player->getWorld()->broadcastPacketToViewers($this->player->getPosition(), $packet);
-		return true;
 	}
 
 	public function handleNetworkStackLatency(NetworkStackLatencyPacket $packet) : bool{

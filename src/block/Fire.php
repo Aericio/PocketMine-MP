@@ -57,6 +57,17 @@ class Fire extends Flowable{
 		return 0b1111;
 	}
 
+	public function getAge() : int{ return $this->age; }
+
+	/** @return $this */
+	public function setAge(int $age) : self{
+		if($age < 0 || $age > 15){
+			throw new \InvalidArgumentException("Age must be in range 0-15");
+		}
+		$this->age = $age;
+		return $this;
+	}
+
 	public function hasEntityCollision() : bool{
 		return true;
 	}
@@ -69,18 +80,19 @@ class Fire extends Flowable{
 		return true;
 	}
 
-	public function onEntityInside(Entity $entity) : void{
+	public function onEntityInside(Entity $entity) : bool{
 		$ev = new EntityDamageByBlockEvent($this, $entity, EntityDamageEvent::CAUSE_FIRE, 1);
 		$entity->attack($ev);
 
 		$ev = new EntityCombustByBlockEvent($this, $entity, 8);
 		if($entity instanceof Arrow){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 		$ev->call();
 		if(!$ev->isCancelled()){
 			$entity->setOnFire($ev->getDuration());
 		}
+		return true;
 	}
 
 	public function getDropsForCompatibleTool(Item $item) : array{

@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world\format\io\region;
 
 use pocketmine\nbt\NBT;
+use pocketmine\nbt\tag\ByteArrayTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\utils\Utils;
@@ -33,14 +34,15 @@ use pocketmine\world\format\io\data\JavaWorldData;
 use pocketmine\world\format\io\exception\CorruptedChunkException;
 use pocketmine\world\format\io\WorldData;
 use pocketmine\world\generator\Generator;
-use pocketmine\world\World;
 use function assert;
 use function file_exists;
 use function is_dir;
 use function is_int;
 use function mkdir;
+use function morton2d_encode;
 use function rename;
 use function scandir;
+use function strlen;
 use function strrpos;
 use function substr;
 use function time;
@@ -62,7 +64,8 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 	public static function isValid(string $path) : bool{
 		if(file_exists($path . "/level.dat") and is_dir($path . "/region/")){
 			foreach(scandir($path . "/region/", SCANDIR_SORT_NONE) as $file){
-				if(substr($file, strrpos($file, ".") + 1) === static::getRegionFileExtension()){
+				$extPos = strrpos($file, ".");
+				if($extPos !== false && substr($file, $extPos + 1) === static::getRegionFileExtension()){
 					//we don't care if other region types exist, we only care if this format is possible
 					return true;
 				}
@@ -117,7 +120,7 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 	}
 
 	protected function getRegion(int $regionX, int $regionZ) : ?RegionLoader{
-		return $this->regions[World::chunkHash($regionX, $regionZ)] ?? null;
+		return $this->regions[morton2d_encode($regionX, $regionZ)] ?? null;
 	}
 
 	/**
@@ -127,8 +130,8 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 		return $this->path . "/region/r.$regionX.$regionZ." . static::getRegionFileExtension();
 	}
 
-	protected function loadRegion(int $regionX, int $regionZ) : void{
-		if(!isset($this->regions[$index = World::chunkHash($regionX, $regionZ)])){
+	protected function loadRegion(int $regionX, int $regionZ) : RegionLoader{
+		if(!isset($this->regions[$index = morton2d_encode($regionX, $regionZ)])){
 			$path = $this->pathToRegion($regionX, $regionZ);
 
 			$region = new RegionLoader($path);
@@ -150,10 +153,11 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 
 			$this->regions[$index] = $region;
 		}
+		return $this->regions[$index];
 	}
 
 	protected function unloadRegion(int $regionX, int $regionZ) : void{
-		if(isset($this->regions[$hash = World::chunkHash($regionX, $regionZ)])){
+		if(isset($this->regions[$hash = morton2d_encode($regionX, $regionZ)])){
 			$this->regions[$hash]->close();
 			unset($this->regions[$hash]);
 		}
@@ -195,6 +199,18 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 		return $result;
 	}
 
+	protected static function readFixedSizeByteArray(CompoundTag $chunk, string $tagName, int $length) : string{
+		$tag = $chunk->getTag($tagName);
+		if(!($tag instanceof ByteArrayTag)){
+			throw new CorruptedChunkException("Expected TAG_ByteArray for '$tagName'");
+		}
+		$data = $tag->getValue();
+		if(strlen($data) !== $length){
+			throw new CorruptedChunkException("Expected '$tagName' payload to have exactly $length bytes, but have " . strlen($data));
+		}
+		return $data;
+	}
+
 	/**
 	 * @throws CorruptedChunkException
 	 */
@@ -203,9 +219,11 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 		self::getRegionIndex($chunkX, $chunkZ, $regionX, $regionZ);
 		assert(is_int($regionX) and is_int($regionZ));
 
-		$this->loadRegion($regionX, $regionZ);
+		if(!file_exists($this->pathToRegion($regionX, $regionZ))){
+			return null;
+		}
 
-		$chunkData = $this->getRegion($regionX, $regionZ)->readChunk($chunkX & 0x1f, $chunkZ & 0x1f);
+		$chunkData = $this->loadRegion($regionX, $regionZ)->readChunk($chunkX & 0x1f, $chunkZ & 0x1f);
 		if($chunkData !== null){
 			return $this->deserializeChunk($chunkData);
 		}
@@ -213,14 +231,9 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 		return null;
 	}
 
-	protected function writeChunk(Chunk $chunk) : void{
-		$chunkX = $chunk->getX();
-		$chunkZ = $chunk->getZ();
-
+	protected function writeChunk(int $chunkX, int $chunkZ, Chunk $chunk) : void{
 		self::getRegionIndex($chunkX, $chunkZ, $regionX, $regionZ);
-		$this->loadRegion($regionX, $regionZ);
-
-		$this->getRegion($regionX, $regionZ)->writeChunk($chunkX & 0x1f, $chunkZ & 0x1f, $this->serializeChunk($chunk));
+		$this->loadRegion($regionX, $regionZ)->writeChunk($chunkX & 0x1f, $chunkZ & 0x1f, $this->serializeChunk($chunk));
 	}
 
 	private function createRegionIterator() : \RegexIterator{
@@ -248,7 +261,7 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 					try{
 						$chunk = $this->loadChunk($chunkX, $chunkZ);
 						if($chunk !== null){
-							yield $chunk;
+							yield [$chunkX, $chunkZ] => $chunk;
 						}
 					}catch(CorruptedChunkException $e){
 						if(!$skipCorrupted){
@@ -270,8 +283,7 @@ abstract class RegionWorldProvider extends BaseWorldProvider{
 		foreach($this->createRegionIterator() as $region){
 			$regionX = ((int) $region[1]);
 			$regionZ = ((int) $region[2]);
-			$this->loadRegion($regionX, $regionZ);
-			$count += $this->getRegion($regionX, $regionZ)->calculateChunkCount();
+			$count += $this->loadRegion($regionX, $regionZ)->calculateChunkCount();
 			$this->unloadRegion($regionX, $regionZ);
 		}
 		return $count;

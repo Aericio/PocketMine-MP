@@ -26,6 +26,7 @@ namespace pocketmine\entity\projectile;
 use pocketmine\block\Block;
 use pocketmine\entity\animation\ArrowShakeAnimation;
 use pocketmine\entity\Entity;
+use pocketmine\entity\EntitySizeInfo;
 use pocketmine\entity\Location;
 use pocketmine\event\entity\ProjectileHitEvent;
 use pocketmine\event\inventory\InventoryPickupArrowEvent;
@@ -50,9 +51,6 @@ class Arrow extends Projectile{
 
 	private const TAG_PICKUP = "pickup"; //TAG_Byte
 
-	public $width = 0.25;
-	public $height = 0.25;
-
 	protected $gravity = 0.05;
 	protected $drag = 0.01;
 
@@ -75,6 +73,8 @@ class Arrow extends Projectile{
 		parent::__construct($location, $shootingEntity, $nbt);
 		$this->setCritical($critical);
 	}
+
+	protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(0.25, 0.25); }
 
 	protected function initEntity(CompoundTag $nbt) : void{
 		parent::initEntity($nbt);
@@ -137,7 +137,7 @@ class Arrow extends Projectile{
 
 	protected function onHit(ProjectileHitEvent $event) : void{
 		$this->setCritical(false);
-		$this->getWorld()->addSound($this->location, new ArrowHitSound());
+		$this->broadcastSound(new ArrowHitSound());
 	}
 
 	protected function onHitBlock(Block $blockHit, RayTraceResult $hitResult) : void{
@@ -178,7 +178,7 @@ class Arrow extends Projectile{
 
 		$ev = new InventoryPickupArrowEvent($playerInventory, $this);
 		if($this->pickupMode === self::PICKUP_NONE or ($this->pickupMode === self::PICKUP_CREATIVE and !$player->isCreative())){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 
 		$ev->call();

@@ -42,6 +42,8 @@ final class BlockLegacyMetadata{
 	public const BAMBOO_LEAF_SIZE_SHIFT = 1;
 	public const BAMBOO_LEAF_SIZE_MASK = 0x03;
 
+	public const BARREL_FLAG_OPEN = 0x08;
+
 	public const BED_FLAG_HEAD = 0x08;
 	public const BED_FLAG_OCCUPIED = 0x04;
 
@@ -62,6 +64,25 @@ final class BlockLegacyMetadata{
 	public const COLORED_TORCH_BP_PURPLE = 8;
 	public const COLORED_TORCH_RG_RED = 0;
 	public const COLORED_TORCH_RG_GREEN = 8;
+
+	public const CORAL_BLOCK_FLAG_DEAD = 0x8;
+
+	public const CORAL_FAN_EAST_WEST = 0;
+	public const CORAL_FAN_NORTH_SOUTH = 1;
+
+	public const CORAL_FAN_HANG_FLAG_DEAD = 0x2;
+
+	public const CORAL_FAN_HANG_TUBE = 0;
+	public const CORAL_FAN_HANG_BRAIN = 1;
+	public const CORAL_FAN_HANG2_BUBBLE = 0;
+	public const CORAL_FAN_HANG2_FIRE = 1;
+	public const CORAL_FAN_HANG3_HORN = 0;
+
+	public const CORAL_VARIANT_TUBE = 0;
+	public const CORAL_VARIANT_BRAIN = 1;
+	public const CORAL_VARIANT_BUBBLE = 2;
+	public const CORAL_VARIANT_FIRE = 3;
+	public const CORAL_VARIANT_HORN = 4;
 
 	public const DIRT_NORMAL = 0;
 	public const DIRT_COARSE = 1;
@@ -118,6 +139,21 @@ final class BlockLegacyMetadata{
 	public const LEVER_FLAG_POWERED = 0x08;
 
 	public const LIQUID_FLAG_FALLING = 0x08;
+
+	public const MUSHROOM_BLOCK_ALL_PORES = 0;
+	public const MUSHROOM_BLOCK_CAP_NORTHWEST_CORNER = 1;
+	public const MUSHROOM_BLOCK_CAP_NORTH_SIDE = 2;
+	public const MUSHROOM_BLOCK_CAP_NORTHEAST_CORNER = 3;
+	public const MUSHROOM_BLOCK_CAP_WEST_SIDE = 4;
+	public const MUSHROOM_BLOCK_CAP_TOP_ONLY = 5;
+	public const MUSHROOM_BLOCK_CAP_EAST_SIDE = 6;
+	public const MUSHROOM_BLOCK_CAP_SOUTHWEST_CORNER = 7;
+	public const MUSHROOM_BLOCK_CAP_SOUTH_SIDE = 8;
+	public const MUSHROOM_BLOCK_CAP_SOUTHEAST_CORNER = 9;
+	public const MUSHROOM_BLOCK_STEM = 10;
+	//11, 12 and 13 appear the same as 0
+	public const MUSHROOM_BLOCK_ALL_CAP = 14;
+	public const MUSHROOM_BLOCK_ALL_STEM = 15;
 
 	public const NETHER_PORTAL_AXIS_X = 1;
 	public const NETHER_PORTAL_AXIS_Z = 2;

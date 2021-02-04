@@ -39,9 +39,6 @@ class Squid extends WaterAnimal{
 
 	public static function getNetworkTypeId() : string{ return EntityIds::SQUID; }
 
-	public $width = 0.95;
-	public $height = 0.95;
-
 	/** @var Vector3|null */
 	public $swimDirection = null;
 	/** @var float */
@@ -49,6 +46,8 @@ class Squid extends WaterAnimal{
 
 	/** @var int */
 	private $switchDirectionTicker = 0;
+
+	protected function getInitialSizeInfo() : EntitySizeInfo{ return new EntitySizeInfo(0.95, 0.95); }
 
 	public function initEntity(CompoundTag $nbt) : void{
 		$this->setMaxHealth(10);
@@ -97,7 +96,7 @@ class Squid extends WaterAnimal{
 		if($this->isAlive()){
 
 			if($this->location->y > 62 and $this->swimDirection !== null){
-				$this->swimDirection->y = -0.5;
+				$this->swimDirection = $this->swimDirection->withComponents(null, -0.5, null);
 			}
 
 			$inWater = $this->isUnderwater();

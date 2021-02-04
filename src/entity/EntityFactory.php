@@ -27,6 +27,7 @@ use DaveRandom\CallbackValidator\CallbackType;
 use DaveRandom\CallbackValidator\ParameterType;
 use DaveRandom\CallbackValidator\ReturnType;
 use pocketmine\block\BlockFactory;
+use pocketmine\data\bedrock\EntityLegacyIds;
 use pocketmine\entity\object\ExperienceOrb;
 use pocketmine\entity\object\FallingBlock;
 use pocketmine\entity\object\ItemEntity;
@@ -46,7 +47,6 @@ use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\mcpe\protocol\types\entity\EntityLegacyIds;
 use pocketmine\utils\SingletonTrait;
 use pocketmine\utils\Utils;
 use pocketmine\world\World;
@@ -66,8 +66,8 @@ final class EntityFactory{
 	 */
 	private $creationFuncs = [];
 	/**
-	 * @var string[][]
-	 * @phpstan-var array<class-string<Entity>, list<string>>
+	 * @var string[]
+	 * @phpstan-var array<class-string<Entity>, string>
 	 */
 	private $saveNames = [];
 
@@ -161,12 +161,11 @@ final class EntityFactory{
 	}
 
 	/**
-	 * @phpstan-param class-string<Entity> $baseClass
 	 * @phpstan-param \Closure(World, CompoundTag) : Entity $creationFunc
 	 */
-	private static function validateCreationFunc(string $baseClass, \Closure $creationFunc) : void{
+	private static function validateCreationFunc(\Closure $creationFunc) : void{
 		$sig = new CallbackType(
-			new ReturnType($baseClass),
+			new ReturnType(Entity::class),
 			new ParameterType("world", World::class),
 			new ParameterType("nbt", CompoundTag::class)
 		);
@@ -193,7 +192,7 @@ final class EntityFactory{
 			throw new \InvalidArgumentException("At least one save name must be provided");
 		}
 		Utils::testValidInstance($className, Entity::class);
-		self::validateCreationFunc($className, $creationFunc);
+		self::validateCreationFunc($creationFunc);
 
 		foreach($saveNames as $name){
 			$this->creationFuncs[$name] = $creationFunc;
@@ -202,7 +201,7 @@ final class EntityFactory{
 			$this->creationFuncs[$legacyMcpeSaveId] = $creationFunc;
 		}
 
-		$this->saveNames[$className] = $saveNames;
+		$this->saveNames[$className] = reset($saveNames);
 	}
 
 	/**
@@ -228,12 +227,20 @@ final class EntityFactory{
 		return $entity;
 	}
 
+	public function injectSaveId(string $class, CompoundTag $saveData) : void{
+		if(isset($this->saveNames[$class])){
+			$saveData->setTag("id", new StringTag($this->saveNames[$class]));
+		}else{
+			throw new \InvalidArgumentException("Entity $class is not registered");
+		}
+	}
+
 	/**
 	 * @phpstan-param class-string<Entity> $class
 	 */
 	public function getSaveId(string $class) : string{
 		if(isset($this->saveNames[$class])){
-			return reset($this->saveNames[$class]);
+			return $this->saveNames[$class];
 		}
 		throw new \InvalidArgumentException("Entity $class is not registered");
 	}

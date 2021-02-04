@@ -25,6 +25,7 @@ namespace pocketmine\entity;
 
 use pocketmine\block\Block;
 use pocketmine\block\BlockLegacyIds;
+use pocketmine\data\bedrock\EffectIdMap;
 use pocketmine\entity\animation\DeathAnimation;
 use pocketmine\entity\animation\HurtAnimation;
 use pocketmine\entity\animation\RespawnAnimation;
@@ -41,6 +42,7 @@ use pocketmine\inventory\Inventory;
 use pocketmine\item\Armor;
 use pocketmine\item\Durable;
 use pocketmine\item\enchantment\Enchantment;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
 use pocketmine\math\Vector3;
 use pocketmine\math\VoxelRayTrace;
@@ -150,7 +152,7 @@ abstract class Living extends Entity{
 		$activeEffectsTag = $nbt->getListTag("ActiveEffects");
 		if($activeEffectsTag !== null){
 			foreach($activeEffectsTag as $e){
-				$effect = VanillaEffects::byMcpeId($e->getByte("Id"));
+				$effect = EffectIdMap::getInstance()->fromId($e->getByte("Id"));
 				if($effect === null){
 					continue;
 				}
@@ -239,7 +241,7 @@ abstract class Living extends Entity{
 			$effects = [];
 			foreach($this->effectManager->all() as $effect){
 				$effects[] = CompoundTag::create()
-					->setByte("Id", $effect->getId())
+					->setByte("Id", EffectIdMap::getInstance()->toId($effect->getType()))
 					->setByte("Amplifier", Binary::signByte($effect->getAmplifier()))
 					->setInt("Duration", $effect->getDuration())
 					->setByte("Ambient", $effect->isAmbient() ? 1 : 0)
@@ -267,13 +269,20 @@ abstract class Living extends Entity{
 	 * etc.
 	 */
 	public function consumeObject(Consumable $consumable) : bool{
+		$this->applyConsumptionResults($consumable);
+		return true;
+	}
+
+	/**
+	 * Applies effects from consuming the object. This shouldn't do any can-consume checks (those are expected to be
+	 * handled by the caller).
+	 */
+	protected function applyConsumptionResults(Consumable $consumable) : void{
 		foreach($consumable->getAdditionalEffects() as $effect){
 			$this->effectManager->add($effect);
 		}
 
 		$consumable->onConsume($this);
-
-		return true;
 	}
 
 	/**
@@ -288,7 +297,7 @@ abstract class Living extends Entity{
 	 */
 	public function jump() : void{
 		if($this->onGround){
-			$this->motion->y = $this->getJumpVelocity(); //Y motion should already be 0 if we're jumping from the ground.
+			$this->motion = $this->motion->withComponents(null, $this->getJumpVelocity(), null); //Y motion should already be 0 if we're jumping from the ground.
 		}
 	}
 
@@ -298,7 +307,7 @@ abstract class Living extends Entity{
 			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FALL, $damage);
 			$this->attack($ev);
 
-			$this->getWorld()->addSound($this->location, $damage > 4 ?
+			$this->broadcastSound($damage > 4 ?
 				new EntityLongFallSound($this) :
 				new EntityShortFallSound($this)
 			);
@@ -310,7 +319,7 @@ abstract class Living extends Entity{
 				$fallBlock = $this->getWorld()->getBlock($fallBlockPos);
 			}
 			if($fallBlock->getId() !== BlockLegacyIds::AIR){
-				$this->getWorld()->addSound($this->location, new EntityLandSound($this, $fallBlock));
+				$this->broadcastSound(new EntityLandSound($this, $fallBlock));
 			}
 		}
 	}
@@ -346,7 +355,7 @@ abstract class Living extends Entity{
 	}
 
 	public function setOnFire(int $seconds) : void{
-		parent::setOnFire($seconds - (int) min($seconds, $seconds * $this->getHighestArmorEnchantmentLevel(Enchantment::FIRE_PROTECTION()) * 0.15));
+		parent::setOnFire($seconds - (int) min($seconds, $seconds * $this->getHighestArmorEnchantmentLevel(VanillaEnchantments::FIRE_PROTECTION()) * 0.15));
 	}
 
 	/**
@@ -356,7 +365,7 @@ abstract class Living extends Entity{
 	public function applyDamageModifiers(EntityDamageEvent $source) : void{
 		if($this->lastDamageCause !== null and $this->attackTime > 0){
 			if($this->lastDamageCause->getBaseDamage() >= $source->getBaseDamage()){
-				$source->setCancelled();
+				$source->cancel();
 			}
 			$source->setModifier(-$this->lastDamageCause->getBaseDamage(), EntityDamageEvent::MODIFIER_PREVIOUS_DAMAGE_COOLDOWN);
 		}
@@ -393,7 +402,7 @@ abstract class Living extends Entity{
 		if($source instanceof EntityDamageByEntityEvent and ($attacker = $source->getDamager()) !== null){
 			$damage = 0;
 			foreach($this->armorInventory->getContents() as $k => $item){
-				if($item instanceof Armor and ($thornsLevel = $item->getEnchantmentLevel(Enchantment::THORNS())) > 0){
+				if($item instanceof Armor and ($thornsLevel = $item->getEnchantmentLevel(VanillaEnchantments::THORNS())) > 0){
 					if(mt_rand(0, 99) < $thornsLevel * 15){
 						$this->damageItem($item, 3);
 						$damage += ($thornsLevel > 10 ? $thornsLevel - 10 : 1 + mt_rand(0, 3));
@@ -431,13 +440,13 @@ abstract class Living extends Entity{
 	private function damageItem(Durable $item, int $durabilityRemoved) : void{
 		$item->applyDamage($durabilityRemoved);
 		if($item->isBroken()){
-			$this->getWorld()->addSound($this->location, new ItemBreakSound());
+			$this->broadcastSound(new ItemBreakSound());
 		}
 	}
 
 	public function attack(EntityDamageEvent $source) : void{
 		if($this->noDamageTicks > 0){
-			$source->setCancelled();
+			$source->cancel();
 		}
 
 		if($this->effectManager->has(VanillaEffects::FIRE_RESISTANCE()) and (
@@ -446,7 +455,7 @@ abstract class Living extends Entity{
 				or $source->getCause() === EntityDamageEvent::CAUSE_LAVA
 			)
 		){
-			$source->setCancelled();
+			$source->cancel();
 		}
 
 		$this->applyDamageModifiers($source);
@@ -458,7 +467,7 @@ abstract class Living extends Entity{
 			//TODO: knockback should not just apply for entity damage sources
 			//this doesn't matter for TNT right now because the PrimedTNT entity is considered the source, not the block.
 			$base = $source->getKnockBack();
-			$source->setKnockBack($base - min($base, $base * $this->getHighestArmorEnchantmentLevel(Enchantment::BLAST_PROTECTION()) * 0.15));
+			$source->setKnockBack($base - min($base, $base * $this->getHighestArmorEnchantmentLevel(VanillaEnchantments::BLAST_PROTECTION()) * 0.15));
 		}
 
 		parent::attack($source);
@@ -550,7 +559,7 @@ abstract class Living extends Entity{
 	}
 
 	protected function entityBaseTick(int $tickDiff = 1) : bool{
-		Timings::$timerLivingEntityBaseTick->startTiming();
+		Timings::$livingEntityBaseTick->startTiming();
 
 		$hasUpdate = parent::entityBaseTick($tickDiff);
 
@@ -574,7 +583,7 @@ abstract class Living extends Entity{
 			$this->attackTime -= $tickDiff;
 		}
 
-		Timings::$timerLivingEntityBaseTick->stopTiming();
+		Timings::$livingEntityBaseTick->stopTiming();
 
 		return $hasUpdate;
 	}
@@ -588,7 +597,7 @@ abstract class Living extends Entity{
 		if(!$this->canBreathe()){
 			$this->setBreathing(false);
 
-			if(($respirationLevel = $this->armorInventory->getHelmet()->getEnchantmentLevel(Enchantment::RESPIRATION())) <= 0 or
+			if(($respirationLevel = $this->armorInventory->getHelmet()->getEnchantmentLevel(VanillaEnchantments::RESPIRATION())) <= 0 or
 				lcg_value() <= (1 / ($respirationLevel + 1))
 			){
 				$ticks -= $tickDiff;
@@ -706,7 +715,7 @@ abstract class Living extends Entity{
 		$blocks = [];
 		$nextIndex = 0;
 
-		foreach(VoxelRayTrace::inDirection($this->location->add(0, $this->eyeHeight, 0), $this->getDirectionVector(), $maxDistance) as $vector3){
+		foreach(VoxelRayTrace::inDirection($this->location->add(0, $this->size->getEyeHeight(), 0), $this->getDirectionVector(), $maxDistance) as $vector3){
 			$block = $this->getWorld()->getBlockAt($vector3->x, $vector3->y, $vector3->z);
 			$blocks[$nextIndex++] = $block;
 
@@ -782,6 +791,8 @@ abstract class Living extends Entity{
 
 	protected function onDispose() : void{
 		$this->armorInventory->removeAllViewers();
+		$this->effectManager->getEffectAddHooks()->clear();
+		$this->effectManager->getEffectRemoveHooks()->clear();
 		parent::onDispose();
 	}
 

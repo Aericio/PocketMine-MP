@@ -52,7 +52,11 @@ class LiquidBucket extends Item{
 		return 0;
 	}
 
-	public function onActivate(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector) : ItemUseResult{
+	public function getFuelResidue() : Item{
+		return VanillaItems::BUCKET();
+	}
+
+	public function onInteractBlock(Player $player, Block $blockReplace, Block $blockClicked, int $face, Vector3 $clickVector) : ItemUseResult{
 		if(!$blockReplace->canBeReplaced()){
 			return ItemUseResult::NONE();
 		}

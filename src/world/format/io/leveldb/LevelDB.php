@@ -169,6 +169,11 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 
 			$id = $idMap->stringToLegacy($tag->getString("name")) ?? BlockLegacyIds::INFO_UPDATE;
 			$data = $tag->getShort("val");
+			if($id === BlockLegacyIds::AIR){
+				//TODO: quick and dirty hack for artifacts left behind by broken world editors
+				//we really need a proper state fixer, but this is a pressing issue.
+				$data = 0;
+			}
 			$palette[] = ($id << 4) | $data;
 		}
 
@@ -360,7 +365,9 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 
 				try{
 					$binaryStream->get(256); //heightmap, discard it
-					$biomeArray = new BiomeArray(ChunkUtils::convertBiomeColors(array_values(unpack("N*", $binaryStream->get(1024))))); //never throws
+					/** @var int[] $unpackedBiomeArray */
+					$unpackedBiomeArray = unpack("N*", $binaryStream->get(1024)); //unpack() will never fail here
+					$biomeArray = new BiomeArray(ChunkUtils::convertBiomeColors(array_values($unpackedBiomeArray))); //never throws
 				}catch(BinaryDataException $e){
 					throw new CorruptedChunkException($e->getMessage(), 0, $e);
 				}
@@ -393,8 +400,6 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 		}
 
 		$chunk = new Chunk(
-			$chunkX,
-			$chunkZ,
 			$subChunks,
 			$entities,
 			$tiles,
@@ -403,7 +408,6 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 
 		//TODO: tile ticks, biome states (?)
 
-		$chunk->setGenerated();
 		$chunk->setPopulated();
 		if($hasBeenUpgraded){
 			$chunk->setDirty(); //trigger rewriting chunk to disk if it was converted from an older format
@@ -412,9 +416,9 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 		return $chunk;
 	}
 
-	protected function writeChunk(Chunk $chunk) : void{
+	protected function writeChunk(int $chunkX, int $chunkZ, Chunk $chunk) : void{
 		$idMap = LegacyBlockIdToStringIdMap::getInstance();
-		$index = LevelDB::chunkIndex($chunk->getX(), $chunk->getZ());
+		$index = LevelDB::chunkIndex($chunkX, $chunkZ);
 
 		$write = new \LevelDBWriteBatch();
 		$write->put($index . self::TAG_VERSION, chr(self::CURRENT_LEVEL_CHUNK_VERSION));
@@ -504,7 +508,7 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 				$chunkZ = Binary::readLInt(substr($key, 4, 4));
 				try{
 					if(($chunk = $this->loadChunk($chunkX, $chunkZ)) !== null){
-						yield $chunk;
+						yield [$chunkX, $chunkZ] => $chunk;
 					}
 				}catch(CorruptedChunkException $e){
 					if(!$skipCorrupted){

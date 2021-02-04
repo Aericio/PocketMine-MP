@@ -56,7 +56,7 @@ class PluginDescription{
 	private $compatibleOperatingSystems = [];
 	/**
 	 * @var string[][]
-	 * @phpstan-var array<string, list<mixed>>
+	 * @phpstan-var array<string, list<string>>
 	 */
 	private $extensions = [];
 	/** @var string[] */
@@ -80,10 +80,13 @@ class PluginDescription{
 	private $website = "";
 	/** @var string */
 	private $prefix = "";
-	/** @var PluginLoadOrder */
+	/** @var PluginEnableOrder */
 	private $order;
 
-	/** @var Permission[] */
+	/**
+	 * @var Permission[][]
+	 * @phpstan-var array<string, list<Permission>>
+	 */
 	private $permissions = [];
 
 	/**
@@ -102,13 +105,13 @@ class PluginDescription{
 
 		$this->name = $plugin["name"];
 		if(preg_match('/^[A-Za-z0-9 _.-]+$/', $this->name) === 0){
-			throw new PluginException("Invalid PluginDescription name");
+			throw new PluginException("Invalid Plugin name");
 		}
 		$this->name = str_replace(" ", "_", $this->name);
 		$this->version = (string) $plugin["version"];
 		$this->main = $plugin["main"];
 		if(stripos($this->main, "pocketmine\\") === 0){
-			throw new PluginException("Invalid PluginDescription main, cannot start within the PocketMine namespace");
+			throw new PluginException("Invalid Plugin main, cannot start within the PocketMine namespace");
 		}
 
 		$this->api = array_map("\strval", (array) ($plugin["api"] ?? []));
@@ -130,7 +133,7 @@ class PluginDescription{
 					$k = $v;
 					$v = "*";
 				}
-				$this->extensions[$k] = is_array($v) ? $v : [$v];
+				$this->extensions[$k] = array_map('strval', is_array($v) ? $v : [$v]);
 			}
 		}
 
@@ -146,17 +149,21 @@ class PluginDescription{
 
 		if(isset($plugin["load"])){
 			try{
-				$this->order = PluginLoadOrder::fromString($plugin["load"]);
+				$this->order = PluginEnableOrder::fromString($plugin["load"]);
 			}catch(\InvalidArgumentException $e){
-				throw new PluginException("Invalid PluginDescription \"load\"");
+				throw new PluginException("Invalid Plugin \"load\"");
 			}
 		}else{
-			$this->order = PluginLoadOrder::POSTWORLD();
+			$this->order = PluginEnableOrder::POSTWORLD();
 		}
 
 		$this->authors = [];
 		if(isset($plugin["author"])){
-			$this->authors[] = $plugin["author"];
+			if(is_array($plugin["author"])){
+				$this->authors = $plugin["author"];
+			}else{
+				$this->authors[] = $plugin["author"];
+			}
 		}
 		if(isset($plugin["authors"])){
 			foreach($plugin["authors"] as $author){
@@ -281,12 +288,13 @@ class PluginDescription{
 		return $this->name;
 	}
 
-	public function getOrder() : PluginLoadOrder{
+	public function getOrder() : PluginEnableOrder{
 		return $this->order;
 	}
 
 	/**
-	 * @return Permission[]
+	 * @return Permission[][]
+	 * @phpstan-return array<string, list<Permission>>
 	 */
 	public function getPermissions() : array{
 		return $this->permissions;

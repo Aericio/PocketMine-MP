@@ -40,8 +40,10 @@ use function fwrite;
 use function gc_collect_cycles;
 use function gc_disable;
 use function gc_enable;
+use function gc_mem_caches;
 use function get_class;
 use function get_declared_classes;
+use function get_defined_functions;
 use function ini_get;
 use function ini_set;
 use function is_array;
@@ -226,7 +228,7 @@ class MemoryManager{
 	 * Called every tick to update the memory manager state.
 	 */
 	public function check() : void{
-		Timings::$memoryManagerTimer->startTiming();
+		Timings::$memoryManager->startTiming();
 
 		if(($this->memoryLimit > 0 or $this->globalMemoryLimit > 0) and ++$this->checkTicker >= $this->checkRate){
 			$this->checkTicker = 0;
@@ -259,11 +261,11 @@ class MemoryManager{
 			$this->triggerGarbageCollector();
 		}
 
-		Timings::$memoryManagerTimer->stopTiming();
+		Timings::$memoryManager->stopTiming();
 	}
 
 	public function triggerGarbageCollector() : int{
-		Timings::$garbageCollectorTimer->startTiming();
+		Timings::$garbageCollector->startTiming();
 
 		if($this->garbageCollectionAsync){
 			$pool = $this->server->getAsyncPool();
@@ -276,8 +278,9 @@ class MemoryManager{
 		}
 
 		$cycles = gc_collect_cycles();
+		gc_mem_caches();
 
-		Timings::$garbageCollectorTimer->stopTiming();
+		Timings::$garbageCollector->stopTiming();
 
 		return $cycles;
 	}
@@ -326,6 +329,9 @@ class MemoryManager{
 		$staticProperties = [];
 		$staticCount = 0;
 
+		$functionStaticVars = [];
+		$functionStaticVarsCount = 0;
+
 		foreach(get_declared_classes() as $className){
 			$reflection = new \ReflectionClass($className);
 			$staticProperties[$className] = [];
@@ -344,6 +350,20 @@ class MemoryManager{
 
 			if(count($staticProperties[$className]) === 0){
 				unset($staticProperties[$className]);
+			}
+
+			foreach($reflection->getMethods() as $method){
+				if($method->getDeclaringClass()->getName() !== $reflection->getName()){
+					continue;
+				}
+				$methodStatics = [];
+				foreach($method->getStaticVariables() as $name => $variable){
+					$methodStatics[$name] = self::continueDump($variable, $objects, $refCounts, 0, $maxNesting, $maxStringSize);
+				}
+				if(count($methodStatics) > 0){
+					$functionStaticVars[$className . "::" . $method->getName()] = $methodStatics;
+					$functionStaticVarsCount += count($functionStaticVars);
+				}
 			}
 		}
 
@@ -379,6 +399,21 @@ class MemoryManager{
 			$logger->info("Wrote $globalCount global variables");
 		}
 
+		foreach(get_defined_functions()["user"] as $function){
+			$reflect = new \ReflectionFunction($function);
+
+			$vars = [];
+			foreach($reflect->getStaticVariables() as $varName => $variable){
+				$vars[$varName] = self::continueDump($variable, $objects, $refCounts, 0, $maxNesting, $maxStringSize);
+			}
+			if(count($vars) > 0){
+				$functionStaticVars[$function] = $vars;
+				$functionStaticVarsCount += count($vars);
+			}
+		}
+		file_put_contents($outputFolder . '/functionStaticVars.js', json_encode($functionStaticVars, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+		$logger->info("Wrote $functionStaticVarsCount function static variables");
+
 		$data = self::continueDump($startingObject, $objects, $refCounts, 0, $maxNesting, $maxStringSize);
 
 		do{
@@ -397,24 +432,46 @@ class MemoryManager{
 				}
 
 				$objects[$hash] = true;
-
-				$reflection = new \ReflectionObject($object);
-
 				$info = [
 					"information" => "$hash@$className",
-					"properties" => []
 				];
-
-				foreach($reflection->getProperties() as $property){
-					if($property->isStatic()){
-						continue;
+				if($object instanceof \Closure){
+					$info["definition"] = Utils::getNiceClosureName($object);
+					$info["referencedVars"] = [];
+					$reflect = new \ReflectionFunction($object);
+					if(($closureThis = $reflect->getClosureThis()) !== null){
+						$info["this"] = self::continueDump($closureThis, $objects, $refCounts, 0, $maxNesting, $maxStringSize);
 					}
 
-					if(!$property->isPublic()){
-						$property->setAccessible(true);
+					foreach($reflect->getStaticVariables() as $name => $variable){
+						$info["referencedVars"][$name] = self::continueDump($variable, $objects, $refCounts, 0, $maxNesting, $maxStringSize);
 					}
+				}else{
+					$reflection = new \ReflectionObject($object);
 
-					$info["properties"][$property->getName()] = self::continueDump($property->getValue($object), $objects, $refCounts, 0, $maxNesting, $maxStringSize);
+					$info["properties"] = [];
+
+					for($original = $reflection; $reflection !== false; $reflection = $reflection->getParentClass()){
+						foreach($reflection->getProperties() as $property){
+							if($property->isStatic()){
+								continue;
+							}
+
+							$name = $property->getName();
+							if($reflection !== $original){
+								if($property->isPrivate()){
+									$name = $reflection->getName() . ":" . $name;
+								}else{
+									continue;
+								}
+							}
+							if(!$property->isPublic()){
+								$property->setAccessible(true);
+							}
+
+							$info["properties"][$name] = self::continueDump($property->getValue($object), $objects, $refCounts, 0, $maxNesting, $maxStringSize);
+						}
+					}
 				}
 
 				fwrite($obData, json_encode($info, JSON_UNESCAPED_SLASHES) . "\n");

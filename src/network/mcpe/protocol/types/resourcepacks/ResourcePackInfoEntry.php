@@ -41,8 +41,10 @@ class ResourcePackInfoEntry{
 	private $contentId;
 	/** @var bool */
 	private $hasScripts;
+	/** @var bool */
+	private $isRtxCapable;
 
-	public function __construct(string $packId, string $version, int $sizeBytes, string $encryptionKey = "", string $subPackName = "", string $contentId = "", bool $hasScripts = false){
+	public function __construct(string $packId, string $version, int $sizeBytes, string $encryptionKey = "", string $subPackName = "", string $contentId = "", bool $hasScripts = false, bool $isRtxCapable = false){
 		$this->packId = $packId;
 		$this->version = $version;
 		$this->sizeBytes = $sizeBytes;
@@ -50,6 +52,7 @@ class ResourcePackInfoEntry{
 		$this->subPackName = $subPackName;
 		$this->contentId = $contentId;
 		$this->hasScripts = $hasScripts;
+		$this->isRtxCapable = $isRtxCapable;
 	}
 
 	public function getPackId() : string{
@@ -80,14 +83,17 @@ class ResourcePackInfoEntry{
 		return $this->hasScripts;
 	}
 
+	public function isRtxCapable() : bool{ return $this->isRtxCapable; }
+
 	public function write(PacketSerializer $out) : void{
 		$out->putString($this->packId);
 		$out->putString($this->version);
 		$out->putLLong($this->sizeBytes);
-		$out->putString($this->encryptionKey ?? "");
-		$out->putString($this->subPackName ?? "");
-		$out->putString($this->contentId ?? "");
+		$out->putString($this->encryptionKey);
+		$out->putString($this->subPackName);
+		$out->putString($this->contentId);
 		$out->putBool($this->hasScripts);
+		$out->putBool($this->isRtxCapable);
 	}
 
 	public static function read(PacketSerializer $in) : self{
@@ -98,6 +104,7 @@ class ResourcePackInfoEntry{
 		$subPackName = $in->getString();
 		$contentId = $in->getString();
 		$hasScripts = $in->getBool();
-		return new self($uuid, $version, $sizeBytes, $encryptionKey, $subPackName, $contentId, $hasScripts);
+		$rtxCapable = $in->getBool();
+		return new self($uuid, $version, $sizeBytes, $encryptionKey, $subPackName, $contentId, $hasScripts, $rtxCapable);
 	}
 }

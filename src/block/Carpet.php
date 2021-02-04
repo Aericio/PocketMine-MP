@@ -23,6 +23,8 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ColorInMetadataTrait;
+use pocketmine\block\utils\DyeColor;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
@@ -32,8 +34,10 @@ use pocketmine\world\BlockTransaction;
 use pocketmine\world\sound\NoteInstrument;
 
 class Carpet extends Flowable{
+	use ColorInMetadataTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		$this->color = DyeColor::WHITE();
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.1), $noteblockInstrument);
 	}
 

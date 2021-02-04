@@ -26,7 +26,10 @@ namespace pocketmine\network\mcpe\handler;
 use PHPUnit\Framework\TestCase;
 
 class StupidJsonDecodeTest extends TestCase{
-	/** @var \Closure */
+	/**
+	 * @var \Closure
+	 * @phpstan-var \Closure(string $json, bool $assoc=) : mixed
+	 */
 	private $stupidJsonDecodeFunc;
 
 	public function setUp() : void{
@@ -54,7 +57,6 @@ class StupidJsonDecodeTest extends TestCase{
 	/**
 	 * @dataProvider stupidJsonDecodeProvider
 	 *
-	 * @param string $brokenJson
 	 * @param mixed  $expect
 	 *
 	 * @throws \ReflectionException

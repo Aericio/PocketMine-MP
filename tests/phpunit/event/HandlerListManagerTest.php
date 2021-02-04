@@ -27,11 +27,16 @@ use PHPUnit\Framework\TestCase;
 
 class HandlerListManagerTest extends TestCase{
 
-	/** @var \Closure */
+	/**
+	 * @var \Closure
+	 * @phpstan-var \Closure(\ReflectionClass<Event>) : bool
+	 */
 	private $isValidFunc;
-	/** @var \Closure */
+	/**
+	 * @var \Closure
+	 * @phpstan-var \Closure(\ReflectionClass<Event>) : ?\ReflectionClass<Event>
+	 */
 	private $resolveParentFunc;
-
 
 	public function setUp() : void{
 		/** @see HandlerListManager::isValidClass() */
@@ -54,9 +59,6 @@ class HandlerListManagerTest extends TestCase{
 	/**
 	 * @dataProvider isValidClassProvider
 	 *
-	 * @param \ReflectionClass $class
-	 * @param bool             $isValid
-	 * @param string           $reason
 	 * @phpstan-param \ReflectionClass<Event> $class
 	 */
 	public function testIsValidClass(\ReflectionClass $class, bool $isValid, string $reason) : void{
@@ -77,8 +79,6 @@ class HandlerListManagerTest extends TestCase{
 	/**
 	 * @dataProvider resolveParentClassProvider
 	 *
-	 * @param \ReflectionClass      $class
-	 * @param \ReflectionClass|null $expect
 	 * @phpstan-param \ReflectionClass<Event>      $class
 	 * @phpstan-param \ReflectionClass<Event>|null $expect
 	 */
@@ -86,7 +86,9 @@ class HandlerListManagerTest extends TestCase{
 		if($expect === null){
 			self::assertNull(($this->resolveParentFunc)($class));
 		}else{
-			self::assertSame(($this->resolveParentFunc)($class)->getName(), $expect->getName());
+			$actualParent = ($this->resolveParentFunc)($class);
+			self::assertNotNull($actualParent);
+			self::assertSame($actualParent->getName(), $expect->getName());
 		}
 	}
 }

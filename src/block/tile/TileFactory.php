@@ -42,13 +42,15 @@ final class TileFactory{
 	 */
 	private $knownTiles = [];
 	/**
-	 * @var string[][]
-	 * @phpstan-var array<class-string<Tile>, list<string>>
+	 * @var string[]
+	 * @phpstan-var array<class-string<Tile>, string>
 	 */
 	private $saveNames = [];
 
 	public function __construct(){
+		$this->register(Barrel::class, ["Barrel", "minecraft:barrel"]);
 		$this->register(Banner::class, ["Banner", "minecraft:banner"]);
+		$this->register(Beacon::class, ["Beacon", "minecraft:beacon"]);
 		$this->register(Bed::class, ["Bed", "minecraft:bed"]);
 		$this->register(BrewingStand::class, ["BrewingStand", "minecraft:brewing_stand"]);
 		$this->register(Chest::class, ["Chest", "minecraft:chest"]);
@@ -66,8 +68,6 @@ final class TileFactory{
 		$this->register(Sign::class, ["Sign", "minecraft:sign"]);
 		$this->register(Skull::class, ["Skull", "minecraft:skull"]);
 
-		//TODO: Barrel
-		//TODO: Beacon
 		//TODO: Bell
 		//TODO: BlastFurnace
 		//TODO: Campfire
@@ -81,7 +81,6 @@ final class TileFactory{
 		//TODO: EndGateway
 		//TODO: EndPortal
 		//TODO: JigsawBlock
-		//TODO: Jukebox
 		//TODO: Lectern
 		//TODO: MovingBlock
 		//TODO: NetherReactor
@@ -107,7 +106,7 @@ final class TileFactory{
 			$this->knownTiles[$name] = $className;
 		}
 
-		$this->saveNames[$className] = $saveNames;
+		$this->saveNames[$className] = reset($saveNames);
 	}
 
 	/**
@@ -135,7 +134,7 @@ final class TileFactory{
 	 */
 	public function getSaveId(string $class) : string{
 		if(isset($this->saveNames[$class])){
-			return reset($this->saveNames[$class]);
+			return $this->saveNames[$class];
 		}
 		throw new \InvalidArgumentException("Tile $class is not registered");
 	}

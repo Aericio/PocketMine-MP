@@ -82,8 +82,6 @@ class RegionLoaderTest extends TestCase{
 
 	/**
 	 * @dataProvider outOfBoundsCoordsProvider
-	 * @param int $x
-	 * @param int $z
 	 *
 	 * @throws ChunkException
 	 * @throws \InvalidArgumentException
@@ -110,14 +108,26 @@ class RegionLoaderTest extends TestCase{
 	/**
 	 * @dataProvider outOfBoundsCoordsProvider
 	 *
-	 * @param int $x
-	 * @param int $z
-	 *
 	 * @throws \InvalidArgumentException
 	 * @throws \pocketmine\world\format\io\exception\CorruptedChunkException
 	 */
 	public function testReadChunkOutOfBounds(int $x, int $z) : void{
 		$this->expectException(\InvalidArgumentException::class);
 		$this->region->readChunk($x, $z);
+	}
+
+	/**
+	 * Test that cached filesize() values don't break validation of region headers
+	 */
+	public function testRegionHeaderCachedFilesizeRegression() : void{
+		$this->region->close();
+		$region = new RegionLoader($this->regionPath); //now we have a region, so the header will be verified, triggering two filesize() calls
+		$region->open();
+		$data = str_repeat("hello", 2000);
+		$region->writeChunk(0, 0, $data); //add some data to the end of the file, to make the cached filesize invalid
+		$region->close();
+		$region = new RegionLoader($this->regionPath);
+		$region->open();
+		self::assertSame($data, $region->readChunk(0, 0));
 	}
 }

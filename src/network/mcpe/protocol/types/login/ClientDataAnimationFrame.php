@@ -57,4 +57,10 @@ final class ClientDataAnimationFrame{
 	 * @required
 	 */
 	public $Image;
+
+	/**
+	 * @var int
+	 * @required
+	 */
+	public $AnimationExpression;
 }

@@ -23,8 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\scheduler;
 
+use pocketmine\snooze\SleeperHandler;
+use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Utils;
 use function array_keys;
+use function array_map;
 use function assert;
 use function count;
 use function spl_object_id;
@@ -72,11 +75,15 @@ class AsyncPool{
 	 */
 	private $workerStartHooks = [];
 
-	public function __construct(int $size, int $workerMemoryLimit, \ClassLoader $classLoader, \ThreadedLogger $logger){
+	/** @var SleeperHandler */
+	private $eventLoop;
+
+	public function __construct(int $size, int $workerMemoryLimit, \ClassLoader $classLoader, \ThreadedLogger $logger, SleeperHandler $eventLoop){
 		$this->size = $size;
 		$this->workerMemoryLimit = $workerMemoryLimit;
 		$this->classLoader = $classLoader;
 		$this->logger = $logger;
+		$this->eventLoop = $eventLoop;
 	}
 
 	/**
@@ -135,8 +142,11 @@ class AsyncPool{
 	 */
 	private function getWorker(int $worker) : AsyncWorker{
 		if(!isset($this->workers[$worker])){
-
-			$this->workers[$worker] = new AsyncWorker($this->logger, $worker, $this->workerMemoryLimit);
+			$notifier = new SleeperNotifier();
+			$this->workers[$worker] = new AsyncWorker($this->logger, $worker, $this->workerMemoryLimit, $notifier);
+			$this->eventLoop->addNotifier($notifier, function() use ($worker) : void{
+				$this->collectTasksFromWorker($worker);
+			});
 			$this->workers[$worker]->setClassLoader($this->classLoader);
 			$this->workers[$worker]->start(self::WORKER_START_OPTIONS);
 
@@ -225,41 +235,57 @@ class AsyncPool{
 	public function collectTasks() : bool{
 		$more = false;
 		foreach($this->taskQueues as $worker => $queue){
-			$doGC = false;
-			while(!$queue->isEmpty()){
-				/** @var AsyncTask $task */
-				$task = $queue->bottom();
-				$task->checkProgressUpdates();
-				if($task->isFinished()){ //make sure the task actually executed before trying to collect
-					$doGC = true;
-					$queue->dequeue();
-
-					if($task->isCrashed()){
-						$this->logger->critical("Could not execute asynchronous task " . (new \ReflectionClass($task))->getShortName() . ": Task crashed");
-						$task->onError();
-					}elseif(!$task->hasCancelledRun()){
-						/*
-						 * It's possible for a task to submit a progress update and then finish before the progress
-						 * update is detected by the parent thread, so here we consume any missed updates.
-						 *
-						 * When this happens, it's possible for a progress update to arrive between the previous
-						 * checkProgressUpdates() call and the next isGarbage() call, causing progress updates to be
-						 * lost. Thus, it's necessary to do one last check here to make sure all progress updates have
-						 * been consumed before completing.
-						 */
-						$task->checkProgressUpdates();
-						$task->onCompletion();
-					}
-				}else{
-					$more = true;
-					break; //current task is still running, skip to next worker
-				}
-			}
-			if($doGC){
-				$this->workers[$worker]->collect();
-			}
+			$more = $this->collectTasksFromWorker($worker) || $more;
 		}
 		return $more;
+	}
+
+	public function collectTasksFromWorker(int $worker) : bool{
+		if(!isset($this->taskQueues[$worker])){
+			throw new \InvalidArgumentException("No such worker $worker");
+		}
+		$queue = $this->taskQueues[$worker];
+		$more = false;
+		while(!$queue->isEmpty()){
+			/** @var AsyncTask $task */
+			$task = $queue->bottom();
+			$task->checkProgressUpdates();
+			if($task->isFinished()){ //make sure the task actually executed before trying to collect
+				$queue->dequeue();
+
+				if($task->isCrashed()){
+					$this->logger->critical("Could not execute asynchronous task " . (new \ReflectionClass($task))->getShortName() . ": Task crashed");
+					$task->onError();
+				}elseif(!$task->hasCancelledRun()){
+					/*
+					 * It's possible for a task to submit a progress update and then finish before the progress
+					 * update is detected by the parent thread, so here we consume any missed updates.
+					 *
+					 * When this happens, it's possible for a progress update to arrive between the previous
+					 * checkProgressUpdates() call and the next isGarbage() call, causing progress updates to be
+					 * lost. Thus, it's necessary to do one last check here to make sure all progress updates have
+					 * been consumed before completing.
+					 */
+					$task->checkProgressUpdates();
+					$task->onCompletion();
+				}
+			}else{
+				$more = true;
+				break; //current task is still running, skip to next worker
+			}
+		}
+		$this->workers[$worker]->collect();
+		return $more;
+	}
+
+	/**
+	 * Returns an array of worker ID => task queue size
+	 *
+	 * @return int[]
+	 * @phpstan-return array<int, int>
+	 */
+	public function getTaskQueueSizes() : array{
+		return array_map(function(\SplQueue $queue) : int{ return $queue->count(); }, $this->taskQueues);
 	}
 
 	public function shutdownUnusedWorkers() : int{
@@ -268,6 +294,7 @@ class AsyncPool{
 		foreach($this->taskQueues as $i => $queue){
 			if((!isset($this->workerLastUsed[$i]) or $this->workerLastUsed[$i] + 300 < $time) and $queue->isEmpty()){
 				$this->workers[$i]->quit();
+				$this->eventLoop->removeNotifier($this->workers[$i]->getNotifier());
 				unset($this->workers[$i], $this->taskQueues[$i], $this->workerLastUsed[$i]);
 				$ret++;
 			}
@@ -298,6 +325,7 @@ class AsyncPool{
 
 		foreach($this->workers as $worker){
 			$worker->quit();
+			$this->eventLoop->removeNotifier($worker->getNotifier());
 		}
 		$this->workers = [];
 		$this->taskQueues = [];

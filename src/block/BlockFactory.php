@@ -28,6 +28,8 @@ use pocketmine\block\BlockIdentifierFlattened as BIDFlattened;
 use pocketmine\block\BlockLegacyIds as Ids;
 use pocketmine\block\BlockLegacyMetadata as Meta;
 use pocketmine\block\tile\Banner as TileBanner;
+use pocketmine\block\tile\Barrel as TileBarrel;
+use pocketmine\block\tile\Beacon as TileBeacon;
 use pocketmine\block\tile\Bed as TileBed;
 use pocketmine\block\tile\BrewingStand as TileBrewingStand;
 use pocketmine\block\tile\Chest as TileChest;
@@ -45,7 +47,7 @@ use pocketmine\block\tile\Note as TileNote;
 use pocketmine\block\tile\Skull as TileSkull;
 use pocketmine\block\utils\DyeColor;
 use pocketmine\block\utils\InvalidBlockStateException;
-use pocketmine\block\utils\PillarRotationTrait;
+use pocketmine\block\utils\PillarRotationInMetadataTrait;
 use pocketmine\block\utils\TreeType;
 use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\item\Item;
@@ -74,12 +76,17 @@ class BlockFactory{
 	 * @var \SplFixedArray|int[]
 	 * @phpstan-var \SplFixedArray<int>
 	 */
+	public $light;
+	/**
+	 * @var \SplFixedArray|int[]
+	 * @phpstan-var \SplFixedArray<int>
+	 */
 	public $lightFilter;
 	/**
 	 * @var \SplFixedArray|bool[]
 	 * @phpstan-var \SplFixedArray<bool>
 	 */
-	public $diffusesSkyLight;
+	public $blocksDirectSkyLight;
 	/**
 	 * @var \SplFixedArray|float[]
 	 * @phpstan-var \SplFixedArray<float>
@@ -89,17 +96,21 @@ class BlockFactory{
 	public function __construct(){
 		$this->fullList = new \SplFixedArray(16384);
 
+		$this->light = \SplFixedArray::fromArray(array_fill(0, 16384, 0));
 		$this->lightFilter = \SplFixedArray::fromArray(array_fill(0, 16384, 1));
-		$this->diffusesSkyLight = \SplFixedArray::fromArray(array_fill(0, 16384, false));
+		$this->blocksDirectSkyLight = \SplFixedArray::fromArray(array_fill(0, 16384, false));
 		$this->blastResistance = \SplFixedArray::fromArray(array_fill(0, 16384, 0.0));
 
 		$this->register(new ActivatorRail(new BID(Ids::ACTIVATOR_RAIL), "Activator Rail"));
 		$this->register(new Air(new BID(Ids::AIR), "Air"));
-		$this->register(new Anvil(new BID(Ids::ANVIL, Meta::ANVIL_NORMAL), "Anvil"));
-		$this->register(new Anvil(new BID(Ids::ANVIL, Meta::ANVIL_SLIGHTLY_DAMAGED), "Slightly Damaged Anvil"));
-		$this->register(new Anvil(new BID(Ids::ANVIL, Meta::ANVIL_VERY_DAMAGED), "Very Damaged Anvil"));
-		$this->register(new Banner(new BIDFlattened(Ids::STANDING_BANNER, Ids::WALL_BANNER, 0, ItemIds::BANNER, TileBanner::class), "Banner"));
+		$this->register(new Anvil(new BID(Ids::ANVIL), "Anvil"));
+		$this->register(new Bamboo(new BID(Ids::BAMBOO), "Bamboo", new BlockBreakInfo(2.0 /* 1.0 in PC */, BlockToolType::AXE)));
+		$this->register(new BambooSapling(new BID(Ids::BAMBOO_SAPLING), "Bamboo Sapling", BlockBreakInfo::instant()));
+		$this->register(new FloorBanner(new BID(Ids::STANDING_BANNER, 0, ItemIds::BANNER, TileBanner::class), "Banner"));
+		$this->register(new WallBanner(new BID(Ids::WALL_BANNER, 0, ItemIds::BANNER, TileBanner::class), "Wall Banner"));
+		$this->register(new Barrel(new BID(Ids::BARREL, 0, null, TileBarrel::class), "Barrel"));
 		$this->register(new Transparent(new BID(Ids::BARRIER), "Barrier", BlockBreakInfo::indestructible()));
+		$this->register(new Beacon(new BID(Ids::BEACON, 0, null, TileBeacon::class), "Beacon", new BlockBreakInfo(3.0)));
 		$this->register(new Bed(new BID(Ids::BED_BLOCK, 0, ItemIds::BED, TileBed::class), "Bed Block"));
 		$this->register(new Bedrock(new BID(Ids::BEDROCK), "Bedrock"));
 		$this->register(new Beetroot(new BID(Ids::BEETROOT_BLOCK), "Beetroot Block"));
@@ -131,6 +142,7 @@ class BlockFactory{
 
 		$this->register(new Cobweb(new BID(Ids::COBWEB), "Cobweb"));
 		$this->register(new CocoaBlock(new BID(Ids::COCOA), "Cocoa Block"));
+		$this->register(new CoralBlock(new BID(Ids::CORAL_BLOCK), "Coral Block", new BlockBreakInfo(7.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel())));
 		$this->register(new CraftingTable(new BID(Ids::CRAFTING_TABLE), "Crafting Table"));
 		$this->register(new DaylightSensor(new BIDFlattened(Ids::DAYLIGHT_DETECTOR, Ids::DAYLIGHT_DETECTOR_INVERTED, 0, null, TileDaylightSensor::class), "Daylight Sensor"));
 		$this->register(new DeadBush(new BID(Ids::DEADBUSH), "Dead Bush"));
@@ -285,7 +297,7 @@ class BlockFactory{
 		$purpurBreakInfo = new BlockBreakInfo(1.5, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel(), 30.0);
 		$this->register(new Opaque(new BID(Ids::PURPUR_BLOCK, Meta::PURPUR_NORMAL), "Purpur Block", $purpurBreakInfo));
 		$this->register(new class(new BID(Ids::PURPUR_BLOCK, Meta::PURPUR_PILLAR), "Purpur Pillar", $purpurBreakInfo) extends Opaque{
-			use PillarRotationTrait;
+			use PillarRotationInMetadataTrait;
 		});
 		$this->register(new Stair(new BID(Ids::PURPUR_STAIRS), "Purpur Stairs", $purpurBreakInfo, NoteInstrument::BASS_DRUM()));
 
@@ -293,10 +305,10 @@ class BlockFactory{
 		$this->register(new Opaque(new BID(Ids::QUARTZ_BLOCK, Meta::QUARTZ_NORMAL), "Quartz Block", $quartzBreakInfo, NoteInstrument::BASS_DRUM()));
 		$this->register(new Stair(new BID(Ids::QUARTZ_STAIRS), "Quartz Stairs", $quartzBreakInfo, NoteInstrument::BASS_DRUM()));
 		$this->register(new class(new BID(Ids::QUARTZ_BLOCK, Meta::QUARTZ_CHISELED), "Chiseled Quartz Block", $quartzBreakInfo, NoteInstrument::BASS_DRUM()) extends Opaque{
-			use PillarRotationTrait;
+			use PillarRotationInMetadataTrait;
 		});
 		$this->register(new class(new BID(Ids::QUARTZ_BLOCK, Meta::QUARTZ_PILLAR), "Quartz Pillar", $quartzBreakInfo, NoteInstrument::BASS_DRUM()) extends Opaque{
-			use PillarRotationTrait;
+			use PillarRotationInMetadataTrait;
 		});
 		$this->register(new Opaque(new BID(Ids::QUARTZ_BLOCK, Meta::QUARTZ_SMOOTH), "Smooth Quartz Block", $quartzBreakInfo)); //TODO: this has axis rotation in 1.9, unsure if a bug (https://bugs.mojang.com/browse/MCPE-39074)
 		$this->register(new Stair(new BID(Ids::SMOOTH_QUARTZ_STAIRS), "Smooth Quartz Stairs", $quartzBreakInfo, NoteInstrument::BASS_DRUM()));
@@ -358,35 +370,35 @@ class BlockFactory{
 
 		//TODO: in the future this won't be the same for all the types
 		$stoneSlabBreakInfo = new BlockBreakInfo(2.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel(), 30.0);
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_BRICK), "Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_COBBLESTONE), "Cobblestone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_FAKE_WOODEN), "Fake Wooden", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_NETHER_BRICK), "Nether Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_QUARTZ), "Quartz", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_SANDSTONE), "Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_SMOOTH_STONE), "Smooth Stone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB, Ids::DOUBLE_STONE_SLAB, Meta::STONE_SLAB_STONE_BRICK), "Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_DARK_PRISMARINE), "Dark Prismarine", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_MOSSY_COBBLESTONE), "Mossy Cobblestone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_PRISMARINE), "Prismarine", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_PRISMARINE_BRICKS), "Prismarine Bricks", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_PURPUR), "Purpur", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_RED_NETHER_BRICK), "Red Nether Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_RED_SANDSTONE), "Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB2, Ids::DOUBLE_STONE_SLAB2, Meta::STONE_SLAB2_SMOOTH_SANDSTONE), "Smooth Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_ANDESITE), "Andesite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_DIORITE), "Diorite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_END_STONE_BRICK), "End Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_GRANITE), "Granite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_POLISHED_ANDESITE), "Polished Andesite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_POLISHED_DIORITE), "Polished Diorite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_POLISHED_GRANITE), "Polished Granite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB3, Ids::DOUBLE_STONE_SLAB3, Meta::STONE_SLAB3_SMOOTH_RED_SANDSTONE), "Smooth Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB4, Ids::DOUBLE_STONE_SLAB4, Meta::STONE_SLAB4_CUT_RED_SANDSTONE), "Cut Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB4, Ids::DOUBLE_STONE_SLAB4, Meta::STONE_SLAB4_CUT_SANDSTONE), "Cut Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB4, Ids::DOUBLE_STONE_SLAB4, Meta::STONE_SLAB4_MOSSY_STONE_BRICK), "Mossy Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB4, Ids::DOUBLE_STONE_SLAB4, Meta::STONE_SLAB4_SMOOTH_QUARTZ), "Smooth Quartz", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
-		$this->register(new Slab(new BIDFlattened(Ids::STONE_SLAB4, Ids::DOUBLE_STONE_SLAB4, Meta::STONE_SLAB4_STONE), "Stone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_BRICK), "Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_COBBLESTONE), "Cobblestone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_FAKE_WOODEN), "Fake Wooden", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_NETHER_BRICK), "Nether Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_QUARTZ), "Quartz", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_SANDSTONE), "Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_SMOOTH_STONE), "Smooth Stone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(1, Meta::STONE_SLAB_STONE_BRICK), "Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_DARK_PRISMARINE), "Dark Prismarine", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_MOSSY_COBBLESTONE), "Mossy Cobblestone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_PRISMARINE), "Prismarine", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_PRISMARINE_BRICKS), "Prismarine Bricks", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_PURPUR), "Purpur", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_RED_NETHER_BRICK), "Red Nether Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_RED_SANDSTONE), "Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(2, Meta::STONE_SLAB2_SMOOTH_SANDSTONE), "Smooth Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_ANDESITE), "Andesite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_DIORITE), "Diorite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_END_STONE_BRICK), "End Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_GRANITE), "Granite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_POLISHED_ANDESITE), "Polished Andesite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_POLISHED_DIORITE), "Polished Diorite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_POLISHED_GRANITE), "Polished Granite", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(3, Meta::STONE_SLAB3_SMOOTH_RED_SANDSTONE), "Smooth Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(4, Meta::STONE_SLAB4_CUT_RED_SANDSTONE), "Cut Red Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(4, Meta::STONE_SLAB4_CUT_SANDSTONE), "Cut Sandstone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(4, Meta::STONE_SLAB4_MOSSY_STONE_BRICK), "Mossy Stone Brick", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(4, Meta::STONE_SLAB4_SMOOTH_QUARTZ), "Smooth Quartz", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
+		$this->register(new Slab(BlockLegacyIdHelper::getStoneSlabIdentifier(4, Meta::STONE_SLAB4_STONE), "Stone", $stoneSlabBreakInfo, NoteInstrument::BASS_DRUM()));
 		$this->register(new Opaque(new BID(Ids::STONECUTTER), "Stonecutter", new BlockBreakInfo(3.5, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel())));
 		$this->register(new Sugarcane(new BID(Ids::REEDS_BLOCK, 0, ItemIds::REEDS), "Sugarcane"));
 		$this->register(new TNT(new BID(Ids::TNT), "TNT"));
@@ -436,7 +448,8 @@ class BlockFactory{
 			$this->register(new WoodenPressurePlate(BlockLegacyIdHelper::getWoodenPressurePlateIdentifier($treeType), $treeType->getDisplayName() . " Pressure Plate"));
 			$this->register(new WoodenTrapdoor(BlockLegacyIdHelper::getWoodenTrapdoorIdentifier($treeType), $treeType->getDisplayName() . " Trapdoor"));
 
-			$this->register(new Sign(BlockLegacyIdHelper::getWoodenSignIdentifier($treeType), $treeType->getDisplayName() . " Sign"));
+			$this->register(new FloorSign(BlockLegacyIdHelper::getWoodenFloorSignIdentifier($treeType), $treeType->getDisplayName() . " Sign"));
+			$this->register(new WallSign(BlockLegacyIdHelper::getWoodenWallSignIdentifier($treeType), $treeType->getDisplayName() . " Wall Sign"));
 		}
 
 		static $sandstoneTypes = [
@@ -460,17 +473,17 @@ class BlockFactory{
 			$coloredName = function(string $name) use($color) : string{
 				return $color->getDisplayName() . " " . $name;
 			};
-			$this->register(new Carpet(new BID(Ids::CARPET, $colorIdMap->toId($color)), $coloredName("Carpet")));
-			$this->register(new Concrete(new BID(Ids::CONCRETE, $colorIdMap->toId($color)), $coloredName("Concrete")));
-			$this->register(new ConcretePowder(new BID(Ids::CONCRETE_POWDER, $colorIdMap->toId($color)), $coloredName("Concrete Powder")));
 			$this->register(new Glass(new BID(Ids::STAINED_GLASS, $colorIdMap->toId($color)), $coloredName("Stained Glass")));
 			$this->register(new GlassPane(new BID(Ids::STAINED_GLASS_PANE, $colorIdMap->toId($color)), $coloredName("Stained Glass Pane")));
 			$this->register(new GlazedTerracotta(BlockLegacyIdHelper::getGlazedTerracottaIdentifier($color), $coloredName("Glazed Terracotta")));
 			$this->register(new HardenedClay(new BID(Ids::STAINED_CLAY, $colorIdMap->toId($color)), $coloredName("Stained Clay")));
 			$this->register(new HardenedGlass(new BID(Ids::HARD_STAINED_GLASS, $colorIdMap->toId($color)), "Hardened " . $coloredName("Stained Glass")));
 			$this->register(new HardenedGlassPane(new BID(Ids::HARD_STAINED_GLASS_PANE, $colorIdMap->toId($color)), "Hardened " . $coloredName("Stained Glass Pane")));
-			$this->register(new Wool(new BID(Ids::WOOL, $colorIdMap->toId($color)), $coloredName("Wool")));
 		}
+		$this->register(new Carpet(new BID(Ids::CARPET), "Carpet"));
+		$this->register(new Concrete(new BID(Ids::CONCRETE), "Concrete"));
+		$this->register(new ConcretePowder(new BID(Ids::CONCRETE_POWDER), "Concrete Powder"));
+		$this->register(new Wool(new BID(Ids::WOOL), "Wool"));
 
 		$this->register(new Wall(new BID(Ids::COBBLESTONE_WALL, Meta::WALL_ANDESITE), "Andesite Wall"));
 		$this->register(new Wall(new BID(Ids::COBBLESTONE_WALL, Meta::WALL_BRICK), "Brick Wall"));
@@ -495,11 +508,8 @@ class BlockFactory{
 		$this->register(new ChemistryTable(new BID(Ids::CHEMISTRY_TABLE, Meta::CHEMISTRY_LAB_TABLE), "Lab Table", $chemistryTableBreakInfo));
 		$this->register(new ChemistryTable(new BID(Ids::CHEMISTRY_TABLE, Meta::CHEMISTRY_MATERIAL_REDUCER), "Material Reducer", $chemistryTableBreakInfo));
 
-		//region --- auto-generated TODOs ---
-		//TODO: minecraft:bamboo
-		//TODO: minecraft:bamboo_sapling
-		//TODO: minecraft:barrel
-		//TODO: minecraft:beacon
+		$this->register(new ChemicalHeat(new BID(Ids::CHEMICAL_HEAT), "Heat Block", $chemistryTableBreakInfo));
+		//region --- auto-generated TODOs for bedrock-1.11.0 ---
 		//TODO: minecraft:bell
 		//TODO: minecraft:blast_furnace
 		//TODO: minecraft:bubble_column
@@ -507,14 +517,12 @@ class BlockFactory{
 		//TODO: minecraft:cartography_table
 		//TODO: minecraft:cauldron
 		//TODO: minecraft:chain_command_block
-		//TODO: minecraft:chemical_heat
 		//TODO: minecraft:chorus_flower
 		//TODO: minecraft:chorus_plant
 		//TODO: minecraft:command_block
 		//TODO: minecraft:composter
 		//TODO: minecraft:conduit
 		//TODO: minecraft:coral
-		//TODO: minecraft:coral_block
 		//TODO: minecraft:coral_fan
 		//TODO: minecraft:coral_fan_dead
 		//TODO: minecraft:coral_fan_hang
@@ -527,7 +535,6 @@ class BlockFactory{
 		//TODO: minecraft:fletching_table
 		//TODO: minecraft:grindstone
 		//TODO: minecraft:jigsaw
-		//TODO: minecraft:jukebox
 		//TODO: minecraft:kelp
 		//TODO: minecraft:lava_cauldron
 		//TODO: minecraft:lectern
@@ -557,6 +564,108 @@ class BlockFactory{
 		//TODO: minecraft:sweet_berry_bush
 		//TODO: minecraft:turtle_egg
 		//TODO: minecraft:undyed_shulker_box
+		//endregion
+
+		//region --- auto-generated TODOs for bedrock-1.13.0 ---
+		//TODO: minecraft:camera
+		//TODO: minecraft:light_block
+		//TODO: minecraft:stickyPistonArmCollision
+		//TODO: minecraft:structure_void
+		//TODO: minecraft:wither_rose
+		//endregion
+
+		//region --- auto-generated TODOs for bedrock-1.14.0 ---
+		//TODO: minecraft:bee_nest
+		//TODO: minecraft:beehive
+		//TODO: minecraft:honey_block
+		//TODO: minecraft:honeycomb_block
+		//endregion
+
+		//region --- auto-generated TODOs for bedrock-1.16.0 ---
+		//TODO: minecraft:allow
+		//TODO: minecraft:ancient_debris
+		//TODO: minecraft:basalt
+		//TODO: minecraft:blackstone
+		//TODO: minecraft:blackstone_double_slab
+		//TODO: minecraft:blackstone_slab
+		//TODO: minecraft:blackstone_stairs
+		//TODO: minecraft:blackstone_wall
+		//TODO: minecraft:border_block
+		//TODO: minecraft:chain
+		//TODO: minecraft:chiseled_nether_bricks
+		//TODO: minecraft:chiseled_polished_blackstone
+		//TODO: minecraft:cracked_nether_bricks
+		//TODO: minecraft:cracked_polished_blackstone_bricks
+		//TODO: minecraft:crimson_button
+		//TODO: minecraft:crimson_door
+		//TODO: minecraft:crimson_double_slab
+		//TODO: minecraft:crimson_fence
+		//TODO: minecraft:crimson_fence_gate
+		//TODO: minecraft:crimson_fungus
+		//TODO: minecraft:crimson_hyphae
+		//TODO: minecraft:crimson_nylium
+		//TODO: minecraft:crimson_planks
+		//TODO: minecraft:crimson_pressure_plate
+		//TODO: minecraft:crimson_roots
+		//TODO: minecraft:crimson_slab
+		//TODO: minecraft:crimson_stairs
+		//TODO: minecraft:crimson_standing_sign
+		//TODO: minecraft:crimson_stem
+		//TODO: minecraft:crimson_trapdoor
+		//TODO: minecraft:crimson_wall_sign
+		//TODO: minecraft:crying_obsidian
+		//TODO: minecraft:deny
+		//TODO: minecraft:gilded_blackstone
+		//TODO: minecraft:lodestone
+		//TODO: minecraft:nether_gold_ore
+		//TODO: minecraft:nether_sprouts
+		//TODO: minecraft:netherite_block
+		//TODO: minecraft:polished_basalt
+		//TODO: minecraft:polished_blackstone
+		//TODO: minecraft:polished_blackstone_brick_double_slab
+		//TODO: minecraft:polished_blackstone_brick_slab
+		//TODO: minecraft:polished_blackstone_brick_stairs
+		//TODO: minecraft:polished_blackstone_brick_wall
+		//TODO: minecraft:polished_blackstone_bricks
+		//TODO: minecraft:polished_blackstone_button
+		//TODO: minecraft:polished_blackstone_double_slab
+		//TODO: minecraft:polished_blackstone_pressure_plate
+		//TODO: minecraft:polished_blackstone_slab
+		//TODO: minecraft:polished_blackstone_stairs
+		//TODO: minecraft:polished_blackstone_wall
+		//TODO: minecraft:quartz_bricks
+		//TODO: minecraft:respawn_anchor
+		//TODO: minecraft:shroomlight
+		//TODO: minecraft:soul_campfire
+		//TODO: minecraft:soul_fire
+		//TODO: minecraft:soul_lantern
+		//TODO: minecraft:soul_soil
+		//TODO: minecraft:soul_torch
+		//TODO: minecraft:stripped_crimson_hyphae
+		//TODO: minecraft:stripped_crimson_stem
+		//TODO: minecraft:stripped_warped_hyphae
+		//TODO: minecraft:stripped_warped_stem
+		//TODO: minecraft:target
+		//TODO: minecraft:twisting_vines
+		//TODO: minecraft:warped_button
+		//TODO: minecraft:warped_door
+		//TODO: minecraft:warped_double_slab
+		//TODO: minecraft:warped_fence
+		//TODO: minecraft:warped_fence_gate
+		//TODO: minecraft:warped_fungus
+		//TODO: minecraft:warped_hyphae
+		//TODO: minecraft:warped_nylium
+		//TODO: minecraft:warped_planks
+		//TODO: minecraft:warped_pressure_plate
+		//TODO: minecraft:warped_roots
+		//TODO: minecraft:warped_slab
+		//TODO: minecraft:warped_stairs
+		//TODO: minecraft:warped_standing_sign
+		//TODO: minecraft:warped_stem
+		//TODO: minecraft:warped_trapdoor
+		//TODO: minecraft:warped_wall_sign
+		//TODO: minecraft:warped_wart_block
+		//TODO: minecraft:weeping_vines
 		//endregion
 	}
 
@@ -722,7 +831,7 @@ class BlockFactory{
 
 				$v = clone $block;
 				try{
-					$v->readStateFromData($id, $m & $stateMask);
+					$v->readStateFromData($id, $m);
 					if($v->getMeta() !== $m){
 						throw new InvalidBlockStateException("Corrupted meta"); //don't register anything that isn't the same when we read it back again
 					}
@@ -748,15 +857,16 @@ class BlockFactory{
 
 	private function fillStaticArrays(int $index, Block $block) : void{
 		$this->fullList[$index] = $block;
+		$this->light[$index] = $block->getLightLevel();
 		$this->lightFilter[$index] = min(15, $block->getLightFilter() + 1); //opacity plus 1 standard light filter
-		$this->diffusesSkyLight[$index] = $block->diffusesSkyLight();
+		$this->blocksDirectSkyLight[$index] = $block->blocksDirectSkyLight();
 		$this->blastResistance[$index] = $block->getBreakInfo()->getBlastResistance();
 	}
 
 	/**
 	 * Returns a new Block instance with the specified ID, meta and position.
 	 */
-	public function get(int $id, int $meta = 0) : Block{
+	public function get(int $id, int $meta) : Block{
 		if($meta < 0 or $meta > 0xf){
 			throw new \InvalidArgumentException("Block meta value $meta is out of bounds");
 		}

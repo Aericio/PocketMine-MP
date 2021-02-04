@@ -23,11 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\protocol\types\login;
 
-use pocketmine\network\mcpe\protocol\types\PersonaPieceTintColor;
-use pocketmine\network\mcpe\protocol\types\PersonaSkinPiece;
-use pocketmine\network\mcpe\protocol\types\SkinAnimation;
-use pocketmine\network\mcpe\protocol\types\SkinData;
-use pocketmine\network\mcpe\protocol\types\SkinImage;
+use pocketmine\network\mcpe\protocol\types\skin\PersonaPieceTintColor;
+use pocketmine\network\mcpe\protocol\types\skin\PersonaSkinPiece;
+use pocketmine\network\mcpe\protocol\types\skin\SkinAnimation;
+use pocketmine\network\mcpe\protocol\types\skin\SkinData;
+use pocketmine\network\mcpe\protocol\types\skin\SkinImage;
 use pocketmine\utils\SingletonTrait;
 use function array_map;
 use function base64_decode;
@@ -60,7 +60,8 @@ final class ClientDataToSkinDataHelper{
 					self::safeB64Decode($animation->Image, "AnimatedImageData.$k.Image")
 				),
 				$animation->Type,
-				$animation->Frames
+				$animation->Frames,
+				$animation->AnimationExpression
 			);
 		}
 		return new SkinData(

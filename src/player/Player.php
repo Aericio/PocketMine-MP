@@ -52,6 +52,7 @@ use pocketmine\event\player\PlayerChangeSkinEvent;
 use pocketmine\event\player\PlayerChatEvent;
 use pocketmine\event\player\PlayerCommandPreprocessEvent;
 use pocketmine\event\player\PlayerDeathEvent;
+use pocketmine\event\player\PlayerDisplayNameChangeEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
 use pocketmine\event\player\PlayerGameModeChangeEvent;
 use pocketmine\event\player\PlayerInteractEvent;
@@ -89,13 +90,14 @@ use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
+use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\PlayerMetadataFlags;
+use pocketmine\permission\DefaultPermissions;
 use pocketmine\permission\PermissibleBase;
 use pocketmine\permission\PermissibleDelegateTrait;
-use pocketmine\permission\PermissionManager;
 use pocketmine\Server;
 use pocketmine\timings\Timings;
 use pocketmine\utils\TextFormat;
@@ -106,6 +108,7 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
 use pocketmine\world\sound\EntityAttackNoDamageSound;
 use pocketmine\world\sound\EntityAttackSound;
+use pocketmine\world\sound\FireExtinguishSound;
 use pocketmine\world\World;
 use function abs;
 use function assert;
@@ -134,9 +137,7 @@ use const PHP_INT_MAX;
  * Main class that handles networking, recovery, and packet sending to the server part
  */
 class Player extends Human implements CommandSender, ChunkListener, IPlayer{
-	use PermissibleDelegateTrait {
-		recalculatePermissions as private delegateRecalculatePermissions;
-	}
+	use PermissibleDelegateTrait;
 
 	private const MOVES_PER_TICK = 2;
 	private const MOVE_BACKLOG_SIZE = 100 * self::MOVES_PER_TICK; //100 ticks backlog (5 seconds)
@@ -182,8 +183,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	/** @var int */
 	protected $messageCounter = 2;
-	/** @var bool */
-	protected $removeFormat = true;
 
 	/** @var int */
 	protected $firstPlayed;
@@ -222,8 +221,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	protected $moveRateLimit = 10 * self::MOVES_PER_TICK;
 	/** @var float|null */
 	protected $lastMovementProcess = null;
-	/** @var Vector3|null */
-	protected $forceMoveSync = null;
 
 	/** @var int */
 	protected $inAirTicks = 0;
@@ -278,9 +275,13 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->locale = $this->playerInfo->getLocale();
 
 		$this->uuid = $this->playerInfo->getUuid();
-		$this->xuid = $this->playerInfo->getXuid();
+		$this->xuid = $this->playerInfo instanceof XboxLivePlayerInfo ? $this->playerInfo->getXuid() : "";
 
-		$this->perm = new PermissibleBase($this);
+		$rootPermissions = [DefaultPermissions::ROOT_USER => true];
+		if($this->server->isOp($this->username)){
+			$rootPermissions[DefaultPermissions::ROOT_OPERATOR] = true;
+		}
+		$this->perm = new PermissibleBase($rootPermissions);
 		$this->chunksPerTick = (int) $this->server->getConfigGroup()->getProperty("chunk-sending.per-tick", 4);
 		$this->spawnThreshold = (int) (($this->server->getConfigGroup()->getProperty("chunk-sending.spawn-radius", 4) ** 2) * M_PI);
 		$this->chunkSelector = new ChunkSelector();
@@ -312,10 +313,12 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			return;
 		}
 
+		$this->perm->recalculatePermissions();
+
 		$this->server->getLogger()->info($this->getServer()->getLanguage()->translateString("pocketmine.player.logIn", [
 			TextFormat::AQUA . $this->username . TextFormat::WHITE,
-			$this->networkSession->getIp(),
-			$this->networkSession->getPort(),
+			$session->getIp(),
+			$session->getPort(),
 			$this->id,
 			$this->getWorld()->getDisplayName(),
 			round($this->location->x, 4),
@@ -344,9 +347,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 
 		$this->keepMovement = true;
-		if($this->isOp()){
-			$this->setRemoveFormat(false);
-		}
 
 		$this->setNameTagVisible();
 		$this->setNameTagAlwaysVisible();
@@ -368,31 +368,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 
 		return "";
-	}
-
-	public function isBanned() : bool{
-		return $this->server->getNameBans()->isBanned($this->username);
-	}
-
-	public function setBanned(bool $banned) : void{
-		if($banned){
-			$this->server->getNameBans()->addBan($this->getName(), null, null, null);
-			$this->kick("You have been banned");
-		}else{
-			$this->server->getNameBans()->remove($this->getName());
-		}
-	}
-
-	public function isWhitelisted() : bool{
-		return $this->server->isWhitelisted($this->username);
-	}
-
-	public function setWhitelisted(bool $value) : void{
-		if($value){
-			$this->server->addWhitelist($this->username);
-		}else{
-			$this->server->removeWhitelist($this->username);
-		}
 	}
 
 	public function isAuthenticated() : bool{
@@ -446,7 +421,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function setAllowFlight(bool $value) : void{
 		$this->allowFlight = $value;
-		$this->networkSession->syncAdventureSettings($this);
+		$this->getNetworkSession()->syncAdventureSettings($this);
 	}
 
 	public function getAllowFlight() : bool{
@@ -457,7 +432,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		if($this->flying !== $value){
 			$this->flying = $value;
 			$this->resetFallDistance();
-			$this->networkSession->syncAdventureSettings($this);
+			$this->getNetworkSession()->syncAdventureSettings($this);
 		}
 	}
 
@@ -467,7 +442,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function setAutoJump(bool $value) : void{
 		$this->autoJump = $value;
-		$this->networkSession->syncAdventureSettings($this);
+		$this->getNetworkSession()->syncAdventureSettings($this);
 	}
 
 	public function hasAutoJump() : bool{
@@ -482,14 +457,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function getServer() : Server{
 		return $this->server;
-	}
-
-	public function getRemoveFormat() : bool{
-		return $this->removeFormat;
-	}
-
-	public function setRemoveFormat(bool $remove = true) : void{
-		$this->removeFormat = $remove;
 	}
 
 	public function getScreenLineHeight() : int{
@@ -549,7 +516,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$this->nextChunkOrderRun = 0;
 
-		$this->networkSession->syncViewAreaRadius($this->viewDistance);
+		$this->getNetworkSession()->syncViewAreaRadius($this->viewDistance);
 
 		$this->logger->debug("Setting view distance to " . $this->viewDistance . " (requested " . $distance . ")");
 	}
@@ -558,52 +525,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		return $this->isConnected();
 	}
 
-	public function isOp() : bool{
-		return $this->server->isOp($this->getName());
-	}
-
-	public function setOp(bool $value) : void{
-		if($value === $this->isOp()){
-			return;
-		}
-
-		if($value){
-			$this->server->addOp($this->getName());
-		}else{
-			$this->server->removeOp($this->getName());
-		}
-
-		$this->networkSession->syncAdventureSettings($this);
-	}
-
-	public function recalculatePermissions() : void{
-		$permManager = PermissionManager::getInstance();
-		$permManager->unsubscribeFromPermission(Server::BROADCAST_CHANNEL_USERS, $this);
-		$permManager->unsubscribeFromPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $this);
-
-		if($this->perm === null){
-			return;
-		}
-
-		$this->delegateRecalculatePermissions();
-
-		if($this->spawned){
-			if($this->hasPermission(Server::BROADCAST_CHANNEL_USERS)){
-				$permManager->subscribeToPermission(Server::BROADCAST_CHANNEL_USERS, $this);
-			}
-			if($this->hasPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE)){
-				$permManager->subscribeToPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $this);
-			}
-
-			$this->networkSession->syncAvailableCommands();
-		}
-	}
-
 	public function isConnected() : bool{
 		return $this->networkSession !== null and $this->networkSession->isConnected();
 	}
 
 	public function getNetworkSession() : NetworkSession{
+		if($this->networkSession === null){
+			throw new \InvalidStateException("Player is not connected");
+		}
 		return $this->networkSession;
 	}
 
@@ -622,7 +551,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	}
 
 	public function setDisplayName(string $name) : void{
-		$this->displayName = $name;
+		$ev = new PlayerDisplayNameChangeEvent($this, $this->displayName, $name);
+		$ev->call();
+
+		$this->displayName = $ev->getNewName();
 	}
 
 	/**
@@ -683,6 +615,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	}
 
 	/**
+	 * Returns the server tick on which the player's cooldown period expires for the given item.
+	 */
+	public function getItemCooldownExpiry(Item $item) : int{
+		$this->checkItemCooldowns();
+		return $this->usedItemsCooldown[$item->getId()] ?? 0;
+	}
+
+	/**
 	 * Returns whether the player has a cooldown period left before it can use the given item again.
 	 */
 	public function hasItemCooldown(Item $item) : bool{
@@ -709,19 +649,22 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 	}
 
-	protected function switchWorld(World $targetWorld) : bool{
+	protected function setPosition(Vector3 $pos) : bool{
 		$oldWorld = $this->location->isValid() ? $this->location->getWorld() : null;
-		if(parent::switchWorld($targetWorld)){
-			if($oldWorld !== null){
-				foreach($this->usedChunks as $index => $status){
-					World::getXZ($index, $X, $Z);
-					$this->unloadChunk($X, $Z, $oldWorld);
+		if(parent::setPosition($pos)){
+			$newWorld = $this->getWorld();
+			if($oldWorld !== $newWorld){
+				if($oldWorld !== null){
+					foreach($this->usedChunks as $index => $status){
+						World::getXZ($index, $X, $Z);
+						$this->unloadChunk($X, $Z, $oldWorld);
+					}
 				}
-			}
 
-			$this->usedChunks = [];
-			$this->loadQueue = [];
-			$this->networkSession->onEnterWorld();
+				$this->usedChunks = [];
+				$this->loadQueue = [];
+				$this->getNetworkSession()->onEnterWorld();
+			}
 
 			return true;
 		}
@@ -733,12 +676,15 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$world = $world ?? $this->getWorld();
 		$index = World::chunkHash($x, $z);
 		if(isset($this->usedChunks[$index])){
-			foreach($world->getChunk($x, $z)->getEntities() as $entity){
-				if($entity !== $this){
-					$entity->despawnFrom($this);
+			$chunk = $world->getChunk($x, $z);
+			if($chunk !== null){ //this might be a chunk that hasn't been generated yet
+				foreach($chunk->getEntities() as $entity){
+					if($entity !== $this){
+						$entity->despawnFrom($this);
+					}
 				}
 			}
-			$this->networkSession->stopUsingChunk($x, $z);
+			$this->getNetworkSession()->stopUsingChunk($x, $z);
 			unset($this->usedChunks[$index]);
 		}
 		$world->unregisterChunkLoader($this->chunkLoader, $x, $z);
@@ -754,12 +700,16 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 	}
 
+	/**
+	 * Requests chunks from the world to be sent, up to a set limit every tick. This operates on the results of the most recent chunk
+	 * order.
+	 */
 	protected function requestChunks() : void{
 		if(!$this->isConnected()){
 			return;
 		}
 
-		Timings::$playerChunkSendTimer->startTiming();
+		Timings::$playerChunkSend->startTiming();
 
 		$count = 0;
 		foreach($this->loadQueue as $index => $distance){
@@ -778,14 +728,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$this->getWorld()->registerChunkLoader($this->chunkLoader, $X, $Z, true);
 			$this->getWorld()->registerChunkListener($this, $X, $Z);
 
-			if(!$this->getWorld()->populateChunk($X, $Z)){
+			if(!$this->getWorld()->requestChunkPopulation($X, $Z)){
 				continue;
 			}
 
 			unset($this->loadQueue[$index]);
 			$this->usedChunks[$index] = UsedChunkStatus::REQUESTED();
 
-			$this->networkSession->startUsingChunk($X, $Z, function(int $chunkX, int $chunkZ) use ($index) : void{
+			$this->getNetworkSession()->startUsingChunk($X, $Z, function(int $chunkX, int $chunkZ) use ($index) : void{
 				$this->usedChunks[$index] = UsedChunkStatus::SENT();
 				if($this->spawnChunkLoadCount === -1){
 					$this->spawnEntitiesOnChunk($chunkX, $chunkZ);
@@ -799,25 +749,39 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 						}
 					}
 
-					$this->networkSession->onTerrainReady();
+					$this->getNetworkSession()->notifyTerrainReady();
 				}
 			});
 		}
 
-		Timings::$playerChunkSendTimer->stopTiming();
+		Timings::$playerChunkSend->stopTiming();
 	}
 
+	private function recheckBroadcastPermissions() : void{
+		foreach([Server::BROADCAST_CHANNEL_USERS, Server::BROADCAST_CHANNEL_ADMINISTRATIVE] as $channel){
+			if($this->hasPermission($channel)){
+				$this->server->subscribeToBroadcastChannel($channel, $this);
+			}else{
+				$this->server->unsubscribeFromBroadcastChannel($channel, $this);
+			}
+		}
+	}
+
+	/**
+	 * Called by the network system when the pre-spawn sequence is completed (e.g. after sending spawn chunks).
+	 * This fires join events and broadcasts join messages to other online players.
+	 */
 	public function doFirstSpawn() : void{
 		if($this->spawned){
 			return;
 		}
 		$this->spawned = true;
-		if($this->hasPermission(Server::BROADCAST_CHANNEL_USERS)){
-			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_USERS, $this);
-		}
-		if($this->hasPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE)){
-			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $this);
-		}
+		$this->recheckBroadcastPermissions();
+		$this->getPermissionRecalculationCallbacks()->add(function(array $changedPermissionsOldValues) : void{
+			if(isset($changedPermissionsOldValues[Server::BROADCAST_CHANNEL_ADMINISTRATIVE]) || isset($changedPermissionsOldValues[Server::BROADCAST_CHANNEL_USERS])){
+				$this->recheckBroadcastPermissions();
+			}
+		});
 
 		$ev = new PlayerJoinEvent($this,
 			new TranslationContainer(TextFormat::YELLOW . "%multiplayer.player.joined", [
@@ -842,12 +806,16 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 	}
 
+	/**
+	 * Calculates which new chunks this player needs to use, and which currently-used chunks it needs to stop using.
+	 * This is based on factors including the player's current render radius and current position.
+	 */
 	protected function orderChunks() : void{
 		if(!$this->isConnected() or $this->viewDistance === -1){
 			return;
 		}
 
-		Timings::$playerChunkOrderTimer->startTiming();
+		Timings::$playerChunkOrder->startTiming();
 
 		$newOrder = [];
 		$unloadChunks = $this->usedChunks;
@@ -871,21 +839,39 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->loadQueue = $newOrder;
 		if(count($this->loadQueue) > 0 or count($unloadChunks) > 0){
 			$this->chunkLoader->setCurrentLocation($this->location);
-			$this->networkSession->syncViewAreaCenterPoint($this->location, $this->viewDistance);
+			$this->getNetworkSession()->syncViewAreaCenterPoint($this->location, $this->viewDistance);
 		}
 
-		Timings::$playerChunkOrderTimer->stopTiming();
+		Timings::$playerChunkOrder->stopTiming();
 	}
 
+	/**
+	 * Returns whether the player is using the chunk with the given coordinates, irrespective of whether the chunk has
+	 * been sent yet.
+	 */
 	public function isUsingChunk(int $chunkX, int $chunkZ) : bool{
 		return isset($this->usedChunks[World::chunkHash($chunkX, $chunkZ)]);
 	}
 
+	/**
+	 * @return UsedChunkStatus[] chunkHash => status
+	 * @phpstan-return array<int, UsedChunkStatus>
+	 */
+	public function getUsedChunks() : array{
+		return $this->usedChunks;
+	}
+
+	/**
+	 * Returns whether the target chunk has been sent to this player.
+	 */
 	public function hasReceivedChunk(int $chunkX, int $chunkZ) : bool{
 		$status = $this->usedChunks[World::chunkHash($chunkX, $chunkZ)] ?? null;
 		return $status !== null and $status->equals(UsedChunkStatus::SENT());
 	}
 
+	/**
+	 * Ticks the chunk-requesting mechanism.
+	 */
 	public function doChunkRequests() : void{
 		if($this->nextChunkOrderRun !== PHP_INT_MAX and $this->nextChunkOrderRun-- <= 0){
 			$this->nextChunkOrderRun = PHP_INT_MAX;
@@ -931,7 +917,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}else{
 			$this->spawnPosition = null;
 		}
-		$this->networkSession->syncPlayerSpawnPoint($this->getSpawn());
+		$this->getNetworkSession()->syncPlayerSpawnPoint($this->getSpawn());
 	}
 
 	public function isSleeping() : bool{
@@ -975,7 +961,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 			$this->getWorld()->setSleepTicks(0);
 
-			$this->networkSession->sendDataPacket(AnimatePacket::create($this->getId(), AnimatePacket::ACTION_STOP_SLEEP));
+			$this->getNetworkSession()->sendDataPacket(AnimatePacket::create($this->getId(), AnimatePacket::ACTION_STOP_SLEEP));
 		}
 	}
 
@@ -991,6 +977,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		if($this->isSpectator()){
 			$this->setFlying(true);
+			$this->setSilent();
 			$this->onGround = false;
 
 			//TODO: HACK! this syncs the onground flag with the client so that flying works properly
@@ -1000,6 +987,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			if($this->isSurvival()){
 				$this->setFlying(false);
 			}
+			$this->setSilent(false);
 			$this->checkGroundState(0, 0, 0, 0, 0, 0);
 		}
 	}
@@ -1026,7 +1014,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$this->spawnToAll();
 		}
 
-		$this->networkSession->syncGameMode($this->gamemode);
+		$this->getNetworkSession()->syncGameMode($this->gamemode);
 		return true;
 	}
 
@@ -1119,39 +1107,19 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 	}
 
-	/**
-	 * Sets the coordinates the player will move to next. This is processed at the end of each tick. Unless you have
-	 * some particularly specialized logic, you probably want to use teleport() instead of this.
-	 *
-	 * This is used for processing movements sent by the player over network.
-	 *
-	 * @param Vector3 $newPos Coordinates of the player's feet, centered horizontally at the base of their bounding box.
-	 *
-	 * @return bool if the
-	 */
-	public function updateNextPosition(Vector3 $newPos) : bool{
-		//TODO: teleport acks are a network specific thing and shouldn't be here
-
-		$newPos = $newPos->asVector3();
-		if($this->forceMoveSync !== null and $newPos->distanceSquared($this->forceMoveSync) > 1){  //Tolerate up to 1 block to avoid problems with client-sided physics when spawning in blocks
-			$this->sendPosition($this->location, null, null, MovePlayerPacket::MODE_RESET);
-			$this->logger->debug("Got outdated pre-teleport movement, received " . $newPos . ", expected " . $this->location->asVector3());
-			//Still getting movements from before teleport, ignore them
-			return false;
-		}
-
-		// Once we get a movement within a reasonable distance, treat it as a teleport ACK and remove position lock
-		$this->forceMoveSync = null;
-
-		$this->handleMovement($newPos);
-		return true;
-	}
-
 	public function getInAirTicks() : int{
 		return $this->inAirTicks;
 	}
 
-	protected function handleMovement(Vector3 $newPos) : void{
+	/**
+	 * Attempts to move the player to the given coordinates. Unless you have some particularly specialized logic, you
+	 * probably want to use teleport() instead of this.
+	 *
+	 * This is used for processing movements sent by the player over network.
+	 *
+	 * @param Vector3 $newPos Coordinates of the player's feet, centered horizontally at the base of their bounding box.
+	 */
+	public function handleMovement(Vector3 $newPos) : void{
 		$this->moveRateLimit--;
 		if($this->moveRateLimit < 0){
 			return;
@@ -1244,7 +1212,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 
 		if($exceededRateLimit){ //client and server positions will be out of sync if this happens
-			$this->server->getLogger()->debug("Player " . $this->getName() . " exceeded movement rate limit, forcing to last accepted position");
+			$this->logger->debug("Exceeded movement rate limit, forcing to last accepted position");
 			$this->sendPosition($this->location, $this->location->getYaw(), $this->location->getPitch(), MovePlayerPacket::MODE_RESET);
 		}
 	}
@@ -1270,6 +1238,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function setMotion(Vector3 $motion) : bool{
 		if(parent::setMotion($motion)){
 			$this->broadcastMotion();
+			$this->getNetworkSession()->sendDataPacket(SetActorMotionPacket::create($this->id, $motion));
 
 			return true;
 		}
@@ -1295,13 +1264,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$this->lastUpdate = $currentTick;
 
-		//TODO: move this to network session ticking (this is specifically related to net sync)
-		$dirtyAttributes = $this->attributeMap->needSend();
-		$this->networkSession->syncAttributes($this, $dirtyAttributes);
-		foreach($dirtyAttributes as $attribute){
-			$attribute->markSynchronized();
-		}
-
 		if(!$this->isAlive() and $this->spawned){
 			$this->onDeathUpdate($tickDiff);
 			return true;
@@ -1318,14 +1280,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 				$this->inAirTicks += $tickDiff;
 			}
 
-			Timings::$timerEntityBaseTick->startTiming();
+			Timings::$entityBaseTick->startTiming();
 			$this->entityBaseTick($tickDiff);
-			Timings::$timerEntityBaseTick->stopTiming();
+			Timings::$entityBaseTick->stopTiming();
 
 			if(!$this->isSpectator() and $this->isAlive()){
-				Timings::$playerCheckNearEntitiesTimer->startTiming();
+				Timings::$playerCheckNearEntities->startTiming();
 				$this->checkNearEntities();
-				Timings::$playerCheckNearEntitiesTimer->stopTiming();
+				Timings::$playerCheckNearEntities->stopTiming();
 			}
 
 			if($this->blockBreakHandler !== null and !$this->blockBreakHandler->update()){
@@ -1366,7 +1328,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function chat(string $message) : bool{
 		$this->doCloseInventory();
 
-		$message = TextFormat::clean($message, $this->removeFormat);
+		$message = TextFormat::clean($message, false);
 		foreach(explode("\n", $message) as $messagePart){
 			if(trim($messagePart) !== "" and strlen($messagePart) <= 255 and $this->messageCounter-- > 0){
 				if(strpos($messagePart, './') === 0){
@@ -1381,11 +1343,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 				}
 
 				if(strpos($ev->getMessage(), "/") === 0){
-					Timings::$playerCommandTimer->startTiming();
+					Timings::$playerCommand->startTiming();
 					$this->server->dispatchCommand($ev->getPlayer(), substr($ev->getMessage(), 1));
-					Timings::$playerCommandTimer->stopTiming();
+					Timings::$playerCommand->stopTiming();
 				}else{
-					$ev = new PlayerChatEvent($this, $ev->getMessage());
+					$ev = new PlayerChatEvent($this, $ev->getMessage(), $this->server->getBroadcastChannelSubscribers(Server::BROADCAST_CHANNEL_USERS));
 					$ev->call();
 					if(!$ev->isCancelled()){
 						$this->server->broadcastMessage($this->getServer()->getLanguage()->translateString($ev->getFormat(), [$ev->getPlayer()->getDisplayName(), $ev->getMessage()]), $ev->getRecipients());
@@ -1411,7 +1373,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			return false;
 		}
 
-		$this->inventory->setHeldItemIndex($hotbarSlot, false);
+		$this->inventory->setHeldItemIndex($hotbarSlot);
 		$this->setUsingItem(false);
 
 		return true;
@@ -1425,10 +1387,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function useHeldItem() : bool{
 		$directionVector = $this->getDirectionVector();
 		$item = $this->inventory->getItemInHand();
+		$oldItem = clone $item;
 
 		$ev = new PlayerItemUseEvent($this, $item, $directionVector);
 		if($this->hasItemCooldown($item) or $this->isSpectator()){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 
 		$ev->call();
@@ -1443,7 +1406,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 
 		$this->resetItemCooldown($item);
-		if($this->hasFiniteResources()){
+		if($this->hasFiniteResources() and !$item->equalsExact($oldItem) and $oldItem->equalsExact($this->inventory->getItemInHand())){
 			$this->inventory->setItemInHand($item);
 		}
 
@@ -1460,9 +1423,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function consumeHeldItem() : bool{
 		$slot = $this->inventory->getItemInHand();
 		if($slot instanceof ConsumableItem){
+			$oldItem = clone $slot;
+
 			$ev = new PlayerItemConsumeEvent($this, $slot);
 			if($this->hasItemCooldown($slot)){
-				$ev->setCancelled();
+				$ev->cancel();
 			}
 			$ev->call();
 
@@ -1473,7 +1438,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$this->setUsingItem(false);
 			$this->resetItemCooldown($slot);
 
-			if($this->hasFiniteResources()){
+			if($this->hasFiniteResources() && $oldItem->equalsExact($this->inventory->getItemInHand())){
 				$slot->pop();
 				$this->inventory->setItemInHand($slot);
 				$this->inventory->addItem($slot->getResidue());
@@ -1497,10 +1462,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 				return false;
 			}
 
+			$oldItem = clone $item;
+
 			$result = $item->onReleaseUsing($this);
 			if($result->equals(ItemUseResult::SUCCESS())){
 				$this->resetItemCooldown($item);
-				$this->inventory->setItemInHand($item);
+				if(!$item->equalsExact($oldItem) and $oldItem->equalsExact($this->inventory->getItemInHand())){
+					$this->inventory->setItemInHand($item);
+				}
 				return true;
 			}
 
@@ -1521,7 +1490,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$ev = new PlayerBlockPickEvent($this, $block, $item);
 		$existingSlot = $this->inventory->first($item);
 		if($existingSlot === -1 and $this->hasFiniteResources()){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 		$ev->call();
 
@@ -1562,6 +1531,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$target = $this->getWorld()->getBlock($pos);
 
 		$ev = new PlayerInteractEvent($this, $this->inventory->getItemInHand(), $target, null, $face, PlayerInteractEvent::LEFT_CLICK_BLOCK);
+		if($this->isSpectator()){
+			$ev->cancel();
+		}
 		$ev->call();
 		if($ev->isCancelled()){
 			return false;
@@ -1574,6 +1546,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$block = $target->getSide($face);
 		if($block->getId() === BlockLegacyIds::FIRE){
 			$this->getWorld()->setBlock($block->getPos(), VanillaBlocks::AIR());
+			$this->getWorld()->addSound($block->getPos()->add(0.5, 0.5, 0.5), new FireExtinguishSound());
 			return true;
 		}
 
@@ -1656,8 +1629,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			return false;
 		}
 		if($entity instanceof ItemEntity or $entity instanceof Arrow){
-			$this->kick("Attempting to attack an invalid entity");
-			$this->logger->warning($this->getServer()->getLanguage()->translateString("pocketmine.player.invalidEntity", [$this->getName()]));
+			$this->logger->debug("Attempted to attack non-attackable entity " . get_class($entity));
 			return false;
 		}
 
@@ -1666,7 +1638,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$ev = new EntityDamageByEntityEvent($this, $entity, EntityDamageEvent::CAUSE_ENTITY_ATTACK, $heldItem->getAttackPoints());
 		if($this->isSpectator() or !$this->canInteract($entity->getLocation(), 8) or ($entity instanceof Player and !$this->server->getConfigGroup()->getConfigBool("pvp"))){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 
 		$meleeEnchantmentDamage = 0;
@@ -1687,7 +1659,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$entity->attack($ev);
 
-		$soundPos = $entity->getPosition()->add(0, $entity->width / 2, 0);
+		$soundPos = $entity->getPosition()->add(0, $entity->size->getHeight() / 2, 0);
 		if($ev->isCancelled()){
 			$this->getWorld()->addSound($soundPos, new EntityAttackNoDamageSound());
 			return false;
@@ -1748,7 +1720,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function toggleFlight(bool $fly) : bool{
 		$ev = new PlayerToggleFlightEvent($this, $fly);
-		$ev->setCancelled(!$this->allowFlight);
+		if(!$this->allowFlight){
+			$ev->cancel();
+		}
 		$ev->call();
 		if($ev->isCancelled()){
 			return false;
@@ -1779,35 +1753,35 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		if($subtitle !== ""){
 			$this->sendSubTitle($subtitle);
 		}
-		$this->networkSession->onTitle($title);
+		$this->getNetworkSession()->onTitle($title);
 	}
 
 	/**
 	 * Sets the subtitle message, without sending a title.
 	 */
 	public function sendSubTitle(string $subtitle) : void{
-		$this->networkSession->onSubTitle($subtitle);
+		$this->getNetworkSession()->onSubTitle($subtitle);
 	}
 
 	/**
 	 * Adds small text to the user's screen.
 	 */
 	public function sendActionBarMessage(string $message) : void{
-		$this->networkSession->onActionBar($message);
+		$this->getNetworkSession()->onActionBar($message);
 	}
 
 	/**
 	 * Removes the title from the client's screen.
 	 */
 	public function removeTitles() : void{
-		$this->networkSession->onClearTitle();
+		$this->getNetworkSession()->onClearTitle();
 	}
 
 	/**
 	 * Resets the title duration settings to defaults and removes any existing titles.
 	 */
 	public function resetTitles() : void{
-		$this->networkSession->onResetTitleOptions();
+		$this->getNetworkSession()->onResetTitleOptions();
 	}
 
 	/**
@@ -1819,7 +1793,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 */
 	public function setTitleDuration(int $fadeIn, int $stay, int $fadeOut) : void{
 		if($fadeIn >= 0 and $stay >= 0 and $fadeOut >= 0){
-			$this->networkSession->onTitleDuration($fadeIn, $stay, $fadeOut);
+			$this->getNetworkSession()->onTitleDuration($fadeIn, $stay, $fadeOut);
 		}
 	}
 
@@ -1834,7 +1808,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			return;
 		}
 
-		$this->networkSession->onRawChatMessage($this->getLanguage()->translateString($message));
+		$this->getNetworkSession()->onRawChatMessage($this->getLanguage()->translateString($message));
 	}
 
 	/**
@@ -1845,7 +1819,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			foreach($parameters as $i => $p){
 				$parameters[$i] = $this->getLanguage()->translateString($p, [], "pocketmine.");
 			}
-			$this->networkSession->onTranslatedChatMessage($this->getLanguage()->translateString($message, $parameters, "pocketmine."), $parameters);
+			$this->getNetworkSession()->onTranslatedChatMessage($this->getLanguage()->translateString($message, $parameters, "pocketmine."), $parameters);
 		}else{
 			$this->sendMessage($this->getLanguage()->translateString($message, $parameters));
 		}
@@ -1855,9 +1829,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 * @param string[] $args
 	 */
 	public function sendJukeboxPopup(string $key, array $args) : void{
-		if($this->networkSession !== null){
-			$this->networkSession->onJukeboxPopup($key, $args);
-		}
+		$this->getNetworkSession()->onJukeboxPopup($key, $args);
 	}
 
 	/**
@@ -1866,11 +1838,11 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 * TODO: add translation type popups
 	 */
 	public function sendPopup(string $message) : void{
-		$this->networkSession->onPopup($message);
+		$this->getNetworkSession()->onPopup($message);
 	}
 
 	public function sendTip(string $message) : void{
-		$this->networkSession->onTip($message);
+		$this->getNetworkSession()->onTip($message);
 	}
 
 	/**
@@ -1880,7 +1852,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 */
 	public function sendForm(Form $form) : void{
 		$id = $this->formIdCounter++;
-		if($this->networkSession->onFormSent($id, $form)){
+		if($this->getNetworkSession()->onFormSent($id, $form)){
 			$this->forms[$id] = $form;
 		}
 	}
@@ -1919,7 +1891,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$ev = new PlayerTransferEvent($this, $address, $port, $message);
 		$ev->call();
 		if(!$ev->isCancelled()){
-			$this->networkSession->transfer($ev->getAddress(), $ev->getPort(), $ev->getMessage());
+			$this->getNetworkSession()->transfer($ev->getAddress(), $ev->getPort(), $ev->getMessage());
 			return true;
 		}
 
@@ -1929,7 +1901,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	/**
 	 * Kicks a player from the server
 	 *
-	 * @param TranslationContainer|string $quitMessage
+	 * @param TranslationContainer|string|null $quitMessage
 	 */
 	public function kick(string $reason = "", $quitMessage = null) : bool{
 		$ev = new PlayerKickEvent($this, $reason, $quitMessage ?? $this->getLeaveMessage());
@@ -1954,19 +1926,34 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 * Note for plugin developers: Prefer kick() instead of this method.
 	 * That way other plugins can have a say in whether the player is removed or not.
 	 *
-	 * @param string                      $reason Shown to the player, usually this will appear on their disconnect screen.
-	 * @param TranslationContainer|string $quitMessage Message to broadcast to online players (null will use default)
+	 * Note for internals developers: Do not call this from network sessions. It will cause a feedback loop.
+	 *
+	 * @param string                           $reason Shown to the player, usually this will appear on their disconnect screen.
+	 * @param TranslationContainer|string|null $quitMessage Message to broadcast to online players (null will use default)
 	 */
-	public function disconnect(string $reason, $quitMessage = null, bool $notify = true) : void{
+	public function disconnect(string $reason, $quitMessage = null) : void{
 		if(!$this->isConnected()){
 			return;
 		}
 
-		$this->networkSession->onPlayerDestroyed($reason, $notify);
+		$this->getNetworkSession()->onPlayerDestroyed($reason);
+		$this->onPostDisconnect($reason, $quitMessage);
+	}
+
+	/**
+	 * @internal
+	 * This method executes post-disconnect actions and cleanups.
+	 *
+	 * @param string                           $reason Shown to the player, usually this will appear on their disconnect screen.
+	 * @param TranslationContainer|string|null $quitMessage Message to broadcast to online players (null will use default)
+	 */
+	public function onPostDisconnect(string $reason, $quitMessage) : void{
+		if($this->isConnected()){
+			throw new \InvalidStateException("Player is still connected");
+		}
 
 		//prevent the player receiving their own disconnect message
-		PermissionManager::getInstance()->unsubscribeFromPermission(Server::BROADCAST_CHANNEL_USERS, $this);
-		PermissionManager::getInstance()->unsubscribeFromPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $this);
+		$this->server->unsubscribeFromAllBroadcastChannels($this);
 
 		$ev = new PlayerQuitEvent($this, $quitMessage ?? $this->getLeaveMessage(), $reason);
 		$ev->call();
@@ -2002,7 +1989,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->removeCurrentWindow();
 		$this->removePermanentInventories();
 
-		$this->perm->clearPermissions();
+		$this->perm->destroyCycles();
 
 		$this->flagForDespawn();
 	}
@@ -2044,16 +2031,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		throw new \BadMethodCallException("Players can't be saved with chunks");
 	}
 
-	/**
-	 * Handles player data saving
-	 *
-	 * @throws \InvalidStateException if the player is closed
-	 */
-	public function save() : void{
-		if($this->closed){
-			throw new \InvalidStateException("Tried to save closed player");
-		}
-
+	public function getSaveData() : CompoundTag{
 		$nbt = $this->saveNBT();
 
 		if($this->location->isValid()){
@@ -2082,7 +2060,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$nbt->setLong("firstPlayed", $this->firstPlayed);
 		$nbt->setLong("lastPlayed", (int) floor(microtime(true) * 1000));
 
-		$this->server->saveOfflinePlayerData($this->username, $nbt);
+		return $nbt;
+	}
+
+	/**
+	 * Handles player data saving
+	 */
+	public function save() : void{
+		$this->server->saveOfflinePlayerData($this->username, $this->getSaveData());
 	}
 
 	protected function onDeath() : void{
@@ -2116,7 +2101,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$this->startDeathAnimation();
 
-		$this->networkSession->onDeath();
+		$this->getNetworkSession()->onServerDeath();
 	}
 
 	protected function onDeathUpdate(int $tickDiff) : bool{
@@ -2126,7 +2111,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function respawn() : void{
 		if($this->server->isHardcore()){
-			$this->setBanned(true);
+			if($this->kick("You have been banned because you died in hardcore mode")){ //this allows plugins to prevent the ban by cancelling PlayerKickEvent
+				$this->server->getNameBans()->addBan($this->getName(), "Died in hardcore mode");
+			}
 			return;
 		}
 
@@ -2154,7 +2141,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->spawnToAll();
 		$this->scheduleUpdate();
 
-		$this->networkSession->onRespawn();
+		$this->getNetworkSession()->onServerRespawn();
 	}
 
 	protected function applyPostDamageEffects(EntityDamageEvent $source) : void{
@@ -2172,9 +2159,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			and $source->getCause() !== EntityDamageEvent::CAUSE_SUICIDE
 			and $source->getCause() !== EntityDamageEvent::CAUSE_VOID
 		){
-			$source->setCancelled();
+			$source->cancel();
 		}elseif($this->allowFlight and $source->getCause() === EntityDamageEvent::CAUSE_FALL){
-			$source->setCancelled();
+			$source->cancel();
 		}
 
 		parent::attack($source);
@@ -2189,6 +2176,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$properties->setBlockPos(EntityMetadataProperties::PLAYER_BED_POSITION, $this->sleeping ?? new Vector3(0, 0, 0));
 	}
 
+	public function sendData(?array $targets, ?array $data = null) : void{
+		if($targets === null){
+			$targets = $this->getViewers();
+			$targets[] = $this;
+		}
+		parent::sendData($targets, $data);
+	}
+
 	public function broadcastAnimation(Animation $animation, ?array $targets = null) : void{
 		if($this->spawned and $targets === null){
 			$targets = $this->getViewers();
@@ -2201,9 +2196,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 * TODO: remove this
 	 */
 	public function sendPosition(Vector3 $pos, ?float $yaw = null, ?float $pitch = null, int $mode = MovePlayerPacket::MODE_NORMAL) : void{
-		$this->networkSession->syncMovement($pos, $yaw, $pitch, $mode);
+		$this->getNetworkSession()->syncMovement($pos, $yaw, $pitch, $mode);
 
-		$this->forceMoveSync = $pos->asVector3();
+		$this->ySize = 0;
 	}
 
 	/**
@@ -2306,7 +2301,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->removeCurrentWindow();
 
 		$this->logger->debug("Opening inventory " . get_class($inventory) . "#" . spl_object_id($inventory));
-		$this->networkSession->getInvManager()->onCurrentWindowChange($inventory);
+		$this->getNetworkSession()->getInvManager()->onCurrentWindowChange($inventory);
 		$inventory->onOpen($this);
 		$this->currentWindow = $inventory;
 		return true;
@@ -2319,7 +2314,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$this->logger->debug("Closing inventory " . get_class($this->currentWindow) . "#" . spl_object_id($this->currentWindow));
 			$this->currentWindow->onClose($this);
 			if($this->isConnected()){
-				$this->networkSession->getInvManager()->onCurrentWindowRemove();
+				$this->getNetworkSession()->getInvManager()->onCurrentWindowRemove();
 			}
 			$this->currentWindow = null;
 		}
@@ -2341,12 +2336,21 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	use ChunkListenerNoOpTrait {
 		onChunkChanged as private;
+		onChunkUnloaded as private;
 	}
 
-	public function onChunkChanged(Chunk $chunk) : void{
-		if(isset($this->usedChunks[$hash = World::chunkHash($chunk->getX(), $chunk->getZ())])){
+	public function onChunkChanged(int $chunkX, int $chunkZ, Chunk $chunk) : void{
+		$status = $this->usedChunks[$hash = World::chunkHash($chunkX, $chunkZ)] ?? null;
+		if($status !== null && !$status->equals(UsedChunkStatus::NEEDED())){
 			$this->usedChunks[$hash] = UsedChunkStatus::NEEDED();
 			$this->nextChunkOrderRun = 0;
+		}
+	}
+
+	public function onChunkUnloaded(int $chunkX, int $chunkZ, Chunk $chunk) : void{
+		if($this->isUsingChunk($chunkX, $chunkZ)){
+			$this->logger->debug("Detected forced unload of chunk " . $chunkX . " " . $chunkZ);
+			$this->unloadChunk($chunkX, $chunkZ);
 		}
 	}
 }

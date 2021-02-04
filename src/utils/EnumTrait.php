@@ -23,7 +23,6 @@ declare(strict_types=1);
 
 namespace pocketmine\utils;
 
-use function getmypid;
 use function preg_match;
 
 trait EnumTrait{
@@ -82,13 +81,12 @@ trait EnumTrait{
 	 * @throws \InvalidArgumentException
 	 */
 	private function __construct(string $enumName){
-		static $pattern = '/^\D[A-Za-z\d_]+$/u';
-		if(preg_match($pattern, $enumName, $matches) === 0){
+		if(preg_match('/^\D[A-Za-z\d_]+$/u', $enumName, $matches) === 0){
 			throw new \InvalidArgumentException("Invalid enum member name \"$enumName\", should only contain letters, numbers and underscores, and must not start with a number");
 		}
 		$this->enumName = $enumName;
 		if(self::$nextId === null){
-			self::$nextId = getmypid(); //this provides enough base entropy to prevent hardcoding
+			self::$nextId = Process::pid(); //this provides enough base entropy to prevent hardcoding
 		}
 		$this->runtimeId = self::$nextId++;
 	}

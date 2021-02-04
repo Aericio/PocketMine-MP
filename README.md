@@ -3,7 +3,10 @@
 	<b>A highly customisable, open source server software for Minecraft: Bedrock Edition written in PHP</b>
 </p>
 
-[![Build Status](https://travis-ci.com/pmmp/PocketMine-MP.svg?branch=master)](https://travis-ci.com/pmmp/PocketMine-MP)
+![CI](https://github.com/pmmp/PocketMine-MP/workflows/CI/badge.svg)
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/pmmp/PocketMine-MP?label=release&logo=github)](https://github.com/pmmp/PocketMine-MP/releases)
+[![Docker Image Version (latest semver)](https://img.shields.io/docker/v/pmmp/pocketmine-mp?logo=docker&label=image)](https://hub.docker.com/r/pmmp/pocketmine-mp)
+[![Discord](https://img.shields.io/discord/373199722573201408?label=discord&color=7289DA&logo=discord)](https://discord.gg/bmSAZBG)
 
 ## Getting started
 - [Documentation](http://pmmp.readthedocs.org/)
@@ -19,7 +22,7 @@
 ## For developers
  * [Building and running from source](BUILDING.md)
  * [Latest API documentation](https://jenkins.pmmp.io/job/PocketMine-MP-doc/doxygen/) - Doxygen documentation generated from development
- * [DevTools](https://github.com/pmmp/PocketMine-DevTools/) - Development tools plugin for creating plugins
+ * [DevTools](https://github.com/pmmp/DevTools/) - Development tools plugin for creating plugins
  * [ExamplePlugin](https://github.com/pmmp/ExamplePlugin/) - Example plugin demonstrating some basic API features
  * [Contributing Guidelines](CONTRIBUTING.md)
 

@@ -23,12 +23,16 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\ColorInMetadataTrait;
+use pocketmine\block\utils\DyeColor;
 use pocketmine\item\Item;
 use pocketmine\world\sound\NoteInstrument;
 
 class Wool extends Opaque{
+	use ColorInMetadataTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		$this->color = DyeColor::WHITE();
 		parent::__construct($idInfo, $name, $breakInfo ?? new class(0.8, BlockToolType::SHEARS) extends BlockBreakInfo{
 				public function getBreakTime(Item $item) : float{
 					$time = parent::getBreakTime($item);

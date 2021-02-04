@@ -82,7 +82,7 @@ use const STR_PAD_RIGHT;
 /**
  * Big collection of functions
  */
-class Utils{
+final class Utils{
 	public const OS_WINDOWS = "win";
 	public const OS_IOS = "ios";
 	public const OS_MACOS = "mac";
@@ -99,6 +99,7 @@ class Utils{
 	/**
 	 * Returns a readable identifier for the given Closure, including file and line.
 	 *
+	 * @phpstan-param anyClosure $closure
 	 * @throws \ReflectionException
 	 */
 	public static function getNiceClosureName(\Closure $closure) : string{
@@ -183,7 +184,14 @@ class Utils{
 		}
 
 		$machine = php_uname("a");
-		$machine .= ($cpuinfo = @file("/proc/cpuinfo")) !== false ? implode(preg_grep("/(model name|Processor|Serial)/", $cpuinfo)) : "";
+		$cpuinfo = @file("/proc/cpuinfo");
+		if($cpuinfo !== false){
+			$cpuinfoLines = preg_grep("/(model name|Processor|Serial)/", $cpuinfo);
+			if($cpuinfoLines === false){
+				throw new AssumptionFailedError("Pattern is valid, so this shouldn't fail ...");
+			}
+			$machine .= implode("", $cpuinfoLines);
+		}
 		$machine .= sys_get_temp_dir();
 		$machine .= $extra;
 		$os = Utils::getOS();
@@ -377,7 +385,7 @@ class Utils{
 		$ret = explode("\n", $contents);
 		ob_end_clean();
 
-		if(count($ret) >= 1 and preg_match('/^.* refcount\\(([0-9]+)\\)\\{$/', trim($ret[0]), $m) > 0){
+		if(preg_match('/^.* refcount\\(([0-9]+)\\)\\{$/', trim($ret[0]), $m) > 0){
 			return ((int) $m[1]) - ($includeCurrent ? 3 : 4); //$value + zval call + extra call
 		}
 		return -1;
@@ -491,6 +499,8 @@ class Utils{
 	 *
 	 * @param callable $signature Dummy callable with the required parameters and return type
 	 * @param callable $subject Callable to check the signature of
+	 * @phpstan-param anyCallable $signature
+	 * @phpstan-param anyCallable $subject
 	 *
 	 * @throws \DaveRandom\CallbackValidator\InvalidCallbackException
 	 * @throws \TypeError

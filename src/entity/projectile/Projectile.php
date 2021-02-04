@@ -173,7 +173,7 @@ abstract class Projectile extends Entity{
 	public function move(float $dx, float $dy, float $dz) : void{
 		$this->blocksAround = null;
 
-		Timings::$entityMoveTimer->startTiming();
+		Timings::$entityMove->startTiming();
 
 		$start = $this->location->asVector3();
 		$end = $start->addVector($this->motion);
@@ -219,9 +219,12 @@ abstract class Projectile extends Entity{
 			}
 		}
 
-		$this->location->x = $end->x;
-		$this->location->y = $end->y;
-		$this->location->z = $end->z;
+		$this->location = Location::fromObject(
+			$end,
+			$this->location->world,
+			$this->location->yaw,
+			$this->location->pitch
+		);
 		$this->recalculateBoundingBox();
 
 		if($hitResult !== null){
@@ -258,10 +261,10 @@ abstract class Projectile extends Entity{
 			$this->location->pitch = (atan2($this->motion->y, $f) * 180 / M_PI);
 		}
 
-		$this->checkChunks();
+		$this->getWorld()->onEntityMoved($this);
 		$this->checkBlockCollision();
 
-		Timings::$entityMoveTimer->stopTiming();
+		Timings::$entityMove->stopTiming();
 	}
 
 	/**

@@ -30,7 +30,7 @@ use pocketmine\block\tile\Spawnable;
 use pocketmine\block\tile\Tile;
 use pocketmine\block\utils\InvalidBlockStateException;
 use pocketmine\entity\Entity;
-use pocketmine\item\enchantment\Enchantment;
+use pocketmine\item\enchantment\VanillaEnchantments;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
 use pocketmine\math\Axis;
@@ -106,7 +106,10 @@ class Block{
 	}
 
 	public function asItem() : Item{
-		return ItemFactory::getInstance()->get($this->idInfo->getItemId(), $this->idInfo->getVariant());
+		return ItemFactory::getInstance()->get(
+			$this->idInfo->getItemId(),
+			$this->idInfo->getVariant() | ($this->writeStateToMeta() & ~$this->getNonPersistentStateBitmask())
+		);
 	}
 
 	public function getMeta() : int{
@@ -120,6 +123,10 @@ class Block{
 	 */
 	public function getStateBitmask() : int{
 		return 0;
+	}
+
+	public function getNonPersistentStateBitmask() : int{
+		return $this->getStateBitmask();
 	}
 
 	protected function writeStateToMeta() : int{
@@ -145,7 +152,7 @@ class Block{
 	}
 
 	public function writeStateToWorld() : void{
-		$this->pos->getWorld()->getChunkAtPosition($this->pos)->setFullBlock($this->pos->x & 0xf, $this->pos->y, $this->pos->z & 0xf, $this->getFullId());
+		$this->pos->getWorld()->getOrLoadChunkAtPosition($this->pos)->setFullBlock($this->pos->x & 0xf, $this->pos->y, $this->pos->z & 0xf, $this->getFullId());
 
 		$tileType = $this->idInfo->getTileClass();
 		$oldTile = $this->pos->getWorld()->getTile($this->pos);
@@ -297,14 +304,14 @@ class Block{
 	}
 
 	/**
-	 * Returns whether this block will diffuse sky light passing through it vertically.
-	 * Diffusion means that full-strength sky light passing through this block will not be reduced, but will start being filtered below the block.
-	 * Examples of this behaviour include leaves and cobwebs.
+	 * Returns whether this block blocks direct sky light from passing through it. This is independent from the light
+	 * filter value, which is used during propagation.
 	 *
-	 * Light-diffusing blocks are included by the heightmap.
+	 * In most cases, this is the same as isTransparent(); however, some special cases exist such as leaves and cobwebs,
+	 * which don't have any additional effect on light propagation, but don't allow direct sky light to pass through.
 	 */
-	public function diffusesSkyLight() : bool{
-		return false;
+	public function blocksDirectSkyLight() : bool{
+		return $this->getLightFilter() > 0;
 	}
 
 	public function isTransparent() : bool{
@@ -355,7 +362,7 @@ class Block{
 	 */
 	public function getDrops(Item $item) : array{
 		if($this->breakInfo->isToolCompatible($item)){
-			if($this->isAffectedBySilkTouch() and $item->hasEnchantment(Enchantment::SILK_TOUCH())){
+			if($this->isAffectedBySilkTouch() and $item->hasEnchantment(VanillaEnchantments::SILK_TOUCH())){
 				return $this->getSilkTouchDrops($item);
 			}
 
@@ -387,7 +394,7 @@ class Block{
 	 * Returns how much XP will be dropped by breaking this block with the given item.
 	 */
 	public function getXpDropForTool(Item $item) : int{
-		if($item->hasEnchantment(Enchantment::SILK_TOUCH()) or !$this->breakInfo->isToolCompatible($item)){
+		if($item->hasEnchantment(VanillaEnchantments::SILK_TOUCH()) or !$this->breakInfo->isToolCompatible($item)){
 			return 0;
 		}
 
@@ -550,9 +557,12 @@ class Block{
 	/**
 	 * Called when an entity's bounding box clips inside this block's cell. Note that the entity may not be intersecting
 	 * with the collision box or bounding box.
+	 *
+	 * @return bool Whether the block is still the same after the intersection. If it changed (e.g. due to an explosive
+	 * being ignited), this should return false.
 	 */
-	public function onEntityInside(Entity $entity) : void{
-
+	public function onEntityInside(Entity $entity) : bool{
+		return true;
 	}
 
 	/**
@@ -561,12 +571,22 @@ class Block{
 	final public function getCollisionBoxes() : array{
 		if($this->collisionBoxes === null){
 			$this->collisionBoxes = $this->recalculateCollisionBoxes();
+			$extraOffset = $this->getPosOffset();
+			$offset = $extraOffset !== null ? $this->pos->addVector($extraOffset) : $this->pos;
 			foreach($this->collisionBoxes as $bb){
-				$bb->offset($this->pos->x, $this->pos->y, $this->pos->z);
+				$bb->offset($offset->x, $offset->y, $offset->z);
 			}
 		}
 
 		return $this->collisionBoxes;
+	}
+
+	/**
+	 * Returns an additional fractional vector to shift the block's effective position by based on the current position.
+	 * Used to randomize position of things like bamboo canes and tall grass.
+	 */
+	public function getPosOffset() : ?Vector3{
+		return null;
 	}
 
 	/**
@@ -579,7 +599,7 @@ class Block{
 	public function isFullCube() : bool{
 		$bb = $this->getCollisionBoxes();
 
-		return count($bb) === 1 and $bb[0]->getAverageEdgeLength() >= 1; //TODO: average length 1 != cube
+		return count($bb) === 1 and $bb[0]->getAverageEdgeLength() >= 1 and $bb[0]->isCube();
 	}
 
 	public function calculateIntercept(Vector3 $pos1, Vector3 $pos2) : ?RayTraceResult{

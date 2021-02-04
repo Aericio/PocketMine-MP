@@ -23,17 +23,16 @@ declare(strict_types=1);
 
 namespace pocketmine\item;
 
-use Ds\Deque;
 use pocketmine\block\Block;
 use pocketmine\block\tile\Banner as TileBanner;
 use pocketmine\block\utils\BannerPattern;
 use pocketmine\block\utils\DyeColor;
-use pocketmine\block\VanillaBlocks;
 use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
+use function count;
 
-class Banner extends Item{
+class Banner extends ItemBlockWallOrFloor{
 	public const TAG_PATTERNS = TileBanner::TAG_PATTERNS;
 	public const TAG_PATTERN_COLOR = TileBanner::TAG_PATTERN_COLOR;
 	public const TAG_PATTERN_NAME = TileBanner::TAG_PATTERN_NAME;
@@ -42,24 +41,28 @@ class Banner extends Item{
 	private $color;
 
 	/**
-	 * @var BannerPattern[]|Deque
-	 * @phpstan-var Deque<BannerPattern>
+	 * @var BannerPattern[]
+	 * @phpstan-var list<BannerPattern>
 	 */
-	private $patterns;
+	private $patterns = [];
 
-	public function __construct(ItemIdentifier $identifier, string $name, DyeColor $color){
-		parent::__construct($identifier, $name);
-		$this->color = $color;
-
-		$this->patterns = new Deque();
+	public function __construct(ItemIdentifier $identifier, Block $floorVariant, Block $wallVariant){
+		parent::__construct($identifier, $floorVariant, $wallVariant);
+		$this->color = DyeColor::BLACK();
 	}
 
 	public function getColor() : DyeColor{
 		return $this->color;
 	}
 
-	public function getBlock() : Block{
-		return VanillaBlocks::BANNER();
+	/** @return $this */
+	public function setColor(DyeColor $color) : self{
+		$this->color = $color;
+		return $this;
+	}
+
+	public function getMeta() : int{
+		return DyeColorIdMap::getInstance()->toInvertedId($this->color);
 	}
 
 	public function getMaxStackSize() : int{
@@ -67,20 +70,20 @@ class Banner extends Item{
 	}
 
 	/**
-	 * @return Deque|BannerPattern[]
-	 * @phpstan-return Deque<BannerPattern>
+	 * @return BannerPattern[]
+	 * @phpstan-return list<BannerPattern>
 	 */
-	public function getPatterns() : Deque{
+	public function getPatterns() : array{
 		return $this->patterns;
 	}
 
 	/**
-	 * @param Deque|BannerPattern[] $patterns
-	 * @phpstan-param Deque<BannerPattern> $patterns
+	 * @param BannerPattern[] $patterns
+	 * @phpstan-param list<BannerPattern> $patterns
 	 *
 	 * @return $this
 	 */
-	public function setPatterns(Deque $patterns) : self{
+	public function setPatterns(array $patterns) : self{
 		$this->patterns = $patterns;
 		return $this;
 	}
@@ -92,14 +95,14 @@ class Banner extends Item{
 	protected function deserializeCompoundTag(CompoundTag $tag) : void{
 		parent::deserializeCompoundTag($tag);
 
-		$this->patterns = new Deque();
+		$this->patterns = [];
 
 		$colorIdMap = DyeColorIdMap::getInstance();
 		$patterns = $tag->getListTag(self::TAG_PATTERNS);
 		if($patterns !== null){
 			/** @var CompoundTag $t */
 			foreach($patterns as $t){
-				$this->patterns->push(new BannerPattern($t->getString(self::TAG_PATTERN_NAME), $colorIdMap->fromInvertedId($t->getInt(self::TAG_PATTERN_COLOR))));
+				$this->patterns[] = new BannerPattern($t->getString(self::TAG_PATTERN_NAME), $colorIdMap->fromInvertedId($t->getInt(self::TAG_PATTERN_COLOR)));
 			}
 		}
 	}
@@ -107,10 +110,9 @@ class Banner extends Item{
 	protected function serializeCompoundTag(CompoundTag $tag) : void{
 		parent::serializeCompoundTag($tag);
 
-		if(!$this->patterns->isEmpty()){
+		if(count($this->patterns) > 0){
 			$patterns = new ListTag();
 			$colorIdMap = DyeColorIdMap::getInstance();
-			/** @var BannerPattern $pattern */
 			foreach($this->patterns as $pattern){
 				$patterns->push(CompoundTag::create()
 					->setString(self::TAG_PATTERN_NAME, $pattern->getId())
@@ -122,11 +124,5 @@ class Banner extends Item{
 		}else{
 			$tag->removeTag(self::TAG_PATTERNS);
 		}
-	}
-
-	public function __clone(){
-		parent::__clone();
-		//we don't need to duplicate the individual patterns because they are immutable
-		$this->patterns = $this->patterns->copy();
 	}
 }

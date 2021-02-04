@@ -45,7 +45,8 @@ class Torch extends Flowable{
 	}
 
 	public function readStateFromData(int $id, int $stateMeta) : void{
-		$this->facing = $stateMeta === 5 ? Facing::UP : BlockDataSerializer::readHorizontalFacing(6 - $stateMeta);
+		$facingMeta = $stateMeta & 0x7;
+		$this->facing = $facingMeta === 5 ? Facing::UP : BlockDataSerializer::readHorizontalFacing(6 - $facingMeta);
 	}
 
 	public function getStateBitmask() : int{
@@ -73,14 +74,13 @@ class Torch extends Flowable{
 			$this->facing = $face;
 			return parent::place($tx, $item, $blockReplace, $blockClicked, $face, $clickVector, $player);
 		}else{
-			static $faces = [
+			foreach([
 				Facing::SOUTH,
 				Facing::WEST,
 				Facing::NORTH,
 				Facing::EAST,
 				Facing::DOWN
-			];
-			foreach($faces as $side){
+			] as $side){
 				$block = $this->getSide($side);
 				if(!$block->isTransparent()){
 					$this->facing = Facing::opposite($side);

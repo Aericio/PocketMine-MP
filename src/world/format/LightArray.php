@@ -39,18 +39,18 @@ if(!defined(__NAMESPACE__ . '\FIFTEEN_NIBBLE_ARRAY')){
 
 final class LightArray{
 
-	public const ZERO = ZERO_NIBBLE_ARRAY;
-	public const FIFTEEN = FIFTEEN_NIBBLE_ARRAY;
+	private const ZERO = ZERO_NIBBLE_ARRAY;
+	private const FIFTEEN = FIFTEEN_NIBBLE_ARRAY;
 
 	/** @var string */
 	private $data;
 
-	public function __construct(?string $payload){
-		if($payload !== null and ($len = strlen($payload)) !== 2048){
+	public function __construct(string $payload){
+		if(($len = strlen($payload)) !== 2048){
 			throw new \InvalidArgumentException("Payload size must be 2048 bytes, but got $len bytes");
 		}
 
-		$this->data = $payload ?? self::ZERO;
+		$this->data = $payload;
 		$this->collectGarbage();
 	}
 
@@ -82,10 +82,10 @@ final class LightArray{
 		 * reference to the const instead of duplicating the whole string. The string will only be duplicated when
 		 * modified, which is perfect for this purpose.
 		 */
-		if($this->data === ZERO_NIBBLE_ARRAY){
-			$this->data = ZERO_NIBBLE_ARRAY;
-		}elseif($this->data === FIFTEEN_NIBBLE_ARRAY){
-			$this->data = FIFTEEN_NIBBLE_ARRAY;
+		if($this->data === self::ZERO){
+			$this->data = self::ZERO;
+		}elseif($this->data === self::FIFTEEN){
+			$this->data = self::FIFTEEN;
 		}
 	}
 

@@ -23,11 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\PillarRotationTrait;
+use pocketmine\block\utils\PillarRotationInMetadataTrait;
 use pocketmine\world\sound\NoteInstrument;
 
 class HayBale extends Opaque{
-	use PillarRotationTrait;
+	use PillarRotationInMetadataTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5), $noteblockInstrument ?? NoteInstrument::BANJO());

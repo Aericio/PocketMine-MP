@@ -36,33 +36,33 @@ final class BlockDataSerializer{
 	 * @throws InvalidBlockStateException
 	 */
 	public static function readFacing(int $raw) : int{
-		static $map = [ //this is for redundancy, for when/if the FACING constant values change
+		$result = [ //this is for redundancy, for when/if the FACING constant values change
 			0 => Facing::DOWN,
 			1 => Facing::UP,
 			2 => Facing::NORTH,
 			3 => Facing::SOUTH,
 			4 => Facing::WEST,
 			5 => Facing::EAST
-		];
-		if(!isset($map[$raw])){
+		][$raw] ?? null;
+		if($result === null){
 			throw new InvalidBlockStateException("Invalid facing $raw");
 		}
-		return $map[$raw];
+		return $result;
 	}
 
 	public static function writeFacing(int $facing) : int{
-		static $map = [ //again, for redundancy
+		$result = [ //again, for redundancy
 			Facing::DOWN => 0,
 			Facing::UP => 1,
 			Facing::NORTH => 2,
 			Facing::SOUTH => 3,
 			Facing::WEST => 4,
 			Facing::EAST => 5
-		];
-		if(!isset($map[$facing])){
+		][$facing] ?? null;
+		if($result === null){
 			throw new \InvalidArgumentException("Invalid facing $facing");
 		}
-		return $map[$facing];
+		return $result;
 	}
 
 	/**
@@ -87,29 +87,29 @@ final class BlockDataSerializer{
 	 * @throws InvalidBlockStateException
 	 */
 	public static function readLegacyHorizontalFacing(int $raw) : int{
-		static $map = [ //again, for redundancy
+		$result = [ //again, for redundancy
 			0 => Facing::SOUTH,
 			1 => Facing::WEST,
 			2 => Facing::NORTH,
 			3 => Facing::EAST
-		];
-		if(!isset($map[$raw])){
+		][$raw] ?? null;
+		if($result === null){
 			throw new InvalidBlockStateException("Invalid legacy facing $raw");
 		}
-		return $map[$raw];
+		return $result;
 	}
 
 	public static function writeLegacyHorizontalFacing(int $facing) : int{
-		static $map = [
+		$result = [
 			Facing::SOUTH => 0,
 			Facing::WEST => 1,
 			Facing::NORTH => 2,
 			Facing::EAST => 3
-		];
-		if(!isset($map[$facing])){
+		][$facing] ?? null;
+		if($result === null){
 			throw new \InvalidArgumentException("Invalid Y-axis facing");
 		}
-		return $map[$facing];
+		return $result;
 	}
 
 	/**
@@ -121,6 +121,32 @@ final class BlockDataSerializer{
 
 	public static function write5MinusHorizontalFacing(int $value) : int{
 		return 5 - self::writeHorizontalFacing($value);
+	}
+
+	public static function readCoralFacing(int $value) : int{
+		$result = [
+			0 => Facing::WEST,
+			1 => Facing::EAST,
+			2 => Facing::NORTH,
+			3 => Facing::SOUTH
+		][$value] ?? null;
+		if($result === null){
+			throw new \InvalidArgumentException("Invalid coral facing $value");
+		}
+		return $result;
+	}
+
+	public static function writeCoralFacing(int $value) : int{
+		$result = [
+			Facing::WEST => 0,
+			Facing::EAST => 1,
+			Facing::NORTH => 2,
+			Facing::SOUTH => 3
+		][$value] ?? null;
+		if($result === null){
+			throw new \InvalidArgumentException("Invalid Y-axis facing $value");
+		}
+		return $result;
 	}
 
 	public static function readBoundedInt(string $name, int $v, int $min, int $max) : int{
